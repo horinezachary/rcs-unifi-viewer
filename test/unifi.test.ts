@@ -37,10 +37,13 @@ async function startMock(opts: MockOptions = {}): Promise<number> {
   return mock.listen(0);
 }
 
-const BASE: Config = { address: '127.0.0.1', port: 0, site: 'default', fingerprint: '', allowChanges: false, showPasswords: false };
+const BASE: Config = { address: '127.0.0.1', port: 0, site: 'default', fingerprint: '', allowChanges: false };
 
-async function startModule(port: number, extra: { config?: Partial<Config>; state?: State; creds?: object; reason?: 'boot' | 'restore' | 'user' } = {}) {
-  sim = await startTestModule(mod, { config: { ...BASE, port, ...extra.config }, state: extra.state, reason: extra.reason });
+async function startModule(
+  port: number,
+  extra: { config?: Partial<Config>; state?: State; creds?: object; reason?: 'boot' | 'restore' | 'user'; verifyPin?: (reason: string, clientId?: string) => boolean } = {},
+) {
+  sim = await startTestModule(mod, { config: { ...BASE, port, ...extra.config }, state: extra.state, reason: extra.reason, verifyPin: extra.verifyPin });
   await sim.settle();
     await until(() => sim!.strip.length > 0);
   // The test controller has no data folder files yet: give it credentials as the web view would.
@@ -154,7 +157,7 @@ describe('module', () => {
   it('starts, restores and resumes by only reading', async () => {
     const port = await startMock();
     for (const reason of ['boot', 'restore', 'user'] as const) {
-      await startModule(port, { reason, state: { sw: '70:a7:41:00:00:03', selPort: 5, ssid: 'w-crew' }, config: { allowChanges: true, showPasswords: true } });
+      await startModule(port, { reason, state: { sw: '70:a7:41:00:00:03', selPort: 5, ssid: 'w-crew' }, config: { allowChanges: true } });
       await sim!.close();
       sim = null;
     }
@@ -265,13 +268,18 @@ describe('module', () => {
     expect(changes()[0]).toMatchObject({ method: 'POST', body: { cmd: 'adopt', mac: 'f4:e2:c6:1a:09:3b' } });
   });
 
-  it('shows a Wi-Fi password only when allowed, and only to the client that asked', async () => {
+  it('shows a Wi-Fi password only after the PIN, and only to the client that asked', async () => {
     const port = await startMock();
-    await startModule(port);
+    let answer = false;
+    const asked: (string | undefined)[] = [];
+    await startModule(port, { verifyPin: (_reason, clientId) => (asked.push(clientId), answer) });
     await sim!.sendUi({ type: 'reveal', id: 'w-comms' }, 'panel');
+    expect(sim!.pinRequests).toEqual(['Show the password for Comms']);
+    expect(asked).toEqual(['panel']);
     expect(sim!.uiMessages.some((m) => m.message.type === 'reveal')).toBe(false);
     expect(JSON.stringify(sim!.uiMessages)).not.toContain('talkback');
-    await sim!.sendUi({ type: 'config', config: { showPasswords: true } });
+    expect(sim!.notifications.at(-1)?.text).toMatch(/PIN/);
+    answer = true;
     await sim!.sendUi({ type: 'reveal', id: 'w-comms' }, 'panel');
     const r = sim!.uiMessages.find((m) => m.message.type === 'reveal')!;
     expect(r.clientId).toBe('panel');
@@ -279,6 +287,7 @@ describe('module', () => {
     expect(r.message.qr.length).toBeGreaterThan(20);
     await sim!.sendUi({ type: 'reveal', id: 'w-ops' }, 'panel');
     expect(sim!.notifications.at(-1)?.text).toMatch(/enterprise/);
+    expect(sim!.pinRequests).toHaveLength(2);
   });
 
   it('stops at a changed certificate until the operator trusts it', async () => {

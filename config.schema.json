@@ -6,9 +6,8 @@
     "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
     "site": { "type": "string", "maxLength": 64 },
     "fingerprint": { "type": "string", "maxLength": 128 },
-    "allowChanges": { "type": "boolean" },
-    "showPasswords": { "type": "boolean" }
+    "allowChanges": { "type": "boolean" }
   },
-  "required": ["address", "port", "site", "fingerprint", "allowChanges", "showPasswords"],
+  "required": ["address", "port", "site", "fingerprint", "allowChanges"],
   "additionalProperties": false
 }

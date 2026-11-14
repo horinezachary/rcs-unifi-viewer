@@ -3,7 +3,7 @@
 //
 // The controller is the source of truth. Health, devices, ports, networks and Wi-Fi are read from it
 // on every poll and kept only in memory. State holds what the panel is looking at (switch, port,
-// Wi-Fi network); config holds the controller's address, site, pinned certificate and two switches;
+// Wi-Fi network); config holds the controller's address, site, pinned certificate and the Allow changes switch;
 // the API key or login lives in the module's data folder, so it is never in a save. Starting,
 // restoring and reconnecting only read. A VLAN change or an adoption goes out only when the operator
 // asks, and only with Allow changes on in Setup.
@@ -40,8 +40,6 @@ export interface Config {
   fingerprint: string;
   /** Lets the operator set port VLANs and adopt devices. Off: the module only reads. */
   allowChanges: boolean;
-  /** Lets the panel and web view show Wi-Fi passwords and join QR codes. */
-  showPasswords: boolean;
 }
 
 type C = Ctx<State, Config>;
@@ -85,8 +83,7 @@ function cfg(ctx: C): Config {
     port: c.port ?? 443,
     site: c.site || 'default',
     fingerprint: c.fingerprint ?? '',
-    allowChanges: c.allowChanges ?? false,
-    showPasswords: c.showPasswords ?? false
+    allowChanges: c.allowChanges ?? false
   };
 }
 
@@ -393,14 +390,19 @@ async function adopt(ctx: C, mac: unknown): Promise<void> {
   await draw(ctx);
 }
 
-/** Sends one Wi-Fi password and its join QR code to the client that asked, and nowhere else. */
+/**
+ * Sends one Wi-Fi password and its join QR code to the client that asked, and nowhere else, once
+ * the system PIN is entered at the panel (a web browser signed in with the PIN has already done so).
+ */
 async function reveal(ctx: C, id: unknown, clientId: string): Promise<void> {
   const w = view().wlans.find((x) => x.id === id);
   if (!w || !rt?.client) return;
-  if (!cfg(ctx).showPasswords) return ctx.notify('Showing Wi-Fi passwords is off in Setup', 'warning');
   if (!w.qrType) return ctx.notify(`${w.name} uses enterprise sign-in: there is no shared password`, 'warning');
   const password = w.qrType === 'WPA' ? rt.client.passphrase(w.id) ?? '' : '';
   if (w.qrType === 'WPA' && !password) return ctx.notify('The controller did not send this password. The API key may need admin rights.', 'warning');
+  if (w.qrType === 'WPA' && !(await ctx.verifyPin(`Show the password for ${w.name}`, clientId))) {
+    return ctx.notify('Password not shown: the PIN was not entered', 'warning');
+  }
   await ctx.ui.send({ type: 'reveal', id: w.id, name: w.name, password, qr: qrRows(wifiQrText(w.name, w.qrType, password, w.hidden)) }, clientId);
 }
 
@@ -432,7 +434,6 @@ async function setConfig(ctx: C, changes: Partial<Config>): Promise<void> {
     next.site = s;
   }
   if (changes.allowChanges !== undefined) next.allowChanges = !!changes.allowChanges;
-  if (changes.showPasswords !== undefined) next.showPasswords = !!changes.showPasswords;
   await ctx.setConfig(next);
   if (rt && !next.allowChanges) rt.pending.clear();
   connect(ctx);

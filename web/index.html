@@ -152,8 +152,6 @@
           <strong>Permissions</strong>
           <div class="row"><rcs-toggle id="allowChanges" label="Allow changes"></rcs-toggle><span>Allow changes</span></div>
           <p>Off: the module only reads. On: the panel and this page can set port VLANs and adopt devices, each after a confirmation.</p>
-          <div class="row"><rcs-toggle id="showPasswords" label="Show Wi-Fi passwords"></rcs-toggle><span>Show Wi-Fi passwords</span></div>
-          <p>Lets the Wi-Fi page show a network's password and join QR code when someone taps Show.</p>
         </div>
         <div class="card">
           <strong>Status</strong>
@@ -399,7 +397,6 @@
       }
 
       function drawWifi() {
-        if (!s.config.showPasswords) revealed.clear();
         if (!s.wlans.length) return $('wlans').replaceChildren(el('p', {}, 'No Wi-Fi networks on this site.'));
         $('wlans').replaceChildren(
           ...s.wlans.map((w) => {
@@ -414,11 +411,11 @@
               const hide = el('rcs-button', { size: 'small' }, 'Hide');
               hide.onclick = () => (revealed.delete(w.id), drawWifi());
               card.append(q, el('div', { class: 'row' }), hide);
-            } else if (s.config.showPasswords) {
+            } else {
               const show = el('rcs-button', { size: 'small', variant: 'primary' }, w.qrType === 'WPA' ? 'Show password and QR' : 'Show QR');
               show.onclick = () => rcs.send({ type: 'reveal', id: w.id });
               card.append(show);
-            } else card.append(el('p', {}, 'Showing passwords is off in Setup.'));
+            }
             return card;
           })
         );
@@ -432,7 +429,6 @@
           $('site').replaceChildren(...sites.map((x) => el('option', { value: x.name, selected: x.name === s.config.site }, x.desc === x.name ? x.name : `${x.desc} (${x.name})`)));
         }
         $('allowChanges').checked = s.config.allowChanges;
-        $('showPasswords').checked = s.config.showPasswords;
         $('credState').textContent = s.credentials.apiKey ? 'An API key is set.' : s.credentials.username ? `Signing in as ${s.credentials.username}.` : 'Not set.';
         $('trust').hidden = !s.certificateSeen;
         const rows = [
@@ -479,7 +475,6 @@
       $('trust').onclick = () =>
         ask('The controller is showing a different certificate than before. Trust it only if you replaced the controller or its certificate.', 'Trust', 'danger', () => rcs.send({ type: 'trust' }));
       $('allowChanges').addEventListener('change', (e) => rcs.send({ type: 'config', config: { allowChanges: e.detail } }));
-      $('showPasswords').addEventListener('change', (e) => rcs.send({ type: 'config', config: { showPasswords: e.detail } }));
 
       const info = await rcs.ready();
       rcs.on('page', show);

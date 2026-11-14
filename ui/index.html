@@ -171,7 +171,6 @@
         </div>
         <div class="col">
           <label class="toggle"><rcs-toggle id="allowChanges" label="Allow changes"></rcs-toggle>Allow changes: set port VLANs, adopt devices</label>
-          <label class="toggle"><rcs-toggle id="showPasswords" label="Show Wi-Fi passwords"></rcs-toggle>Show Wi-Fi passwords and QR codes</label>
           <div class="k note">Site</div>
           <div class="tabs" id="sites" role="group" aria-label="Site" style="flex-wrap: wrap"></div>
         </div>
@@ -410,12 +409,11 @@
             const hide = el('rcs-button', { size: 'small' }, 'Hide');
             hide.onclick = () => ((revealed = null), drawWifi());
             parts.push(el('div', {}, ''), hide);
-          } else if (s.config.showPasswords) {
+          } else {
             const show = el('rcs-button', { size: 'small', variant: 'primary' }, sel.qrType === 'WPA' ? 'Show password and QR' : 'Show QR');
             show.onclick = () => rcs.send({ type: 'reveal', id: sel.id });
             parts.push(el('div', {}, ''), show);
-          } else {
-            parts.push(el('span', { class: 'note' }, 'Showing passwords is off in Setup.'));
+            if (sel.qrType === 'WPA') parts.push(el('span', { class: 'note' }, 'Asks for the system PIN when one is set.'));
           }
         }
         $('wifiDetail').replaceChildren(...parts);
@@ -432,7 +430,6 @@
         if (!$('address').matches('[editing]')) $('address').value = s.config.address;
         if (!$('port').matches('[editing]')) $('port').value = String(s.config.port);
         $('allowChanges').checked = s.config.allowChanges;
-        $('showPasswords').checked = s.config.showPasswords;
         const sites = s.sites.length ? s.sites : [{ name: s.config.site, desc: s.config.site }];
         $('sites').replaceChildren(
           ...sites.map((x) => {
@@ -487,13 +484,11 @@
       $('address').addEventListener('change', (e) => rcs.send({ type: 'config', config: { address: e.detail } }));
       $('port').addEventListener('change', (e) => rcs.send({ type: 'config', config: { port: Number(e.detail) } }));
       $('allowChanges').addEventListener('change', (e) => rcs.send({ type: 'config', config: { allowChanges: e.detail } }));
-      $('showPasswords').addEventListener('change', (e) => rcs.send({ type: 'config', config: { showPasswords: e.detail } }));
 
       await rcs.ready();
       rcs.on('message', (m) => {
         if (m?.type === 'snapshot') {
           s = m;
-          if (!s.config.showPasswords) revealed = null;
           draw();
         } else if (m?.type === 'reveal') {
           revealed = m;

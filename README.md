@@ -11,8 +11,9 @@ Machine, Cloud Gateway, Cloud Key, UniFi OS Server) or a self-hosted UniFi Netwo
   device on it. Tap a port, pick a VLAN on keys 1 to 10, then hold SAVE (key 15). The web view has
   a VLAN menu per port and an Apply button.
 - **Adopt**: devices waiting to be adopted. Hold the device's key, or tap Adopt and confirm.
-- **Wi-Fi**: each network's bands, security, VLAN and clients. With Show Wi-Fi passwords on, tap
-  Show for the password and a QR code a phone can scan to join. It hides itself after a minute.
+- **Wi-Fi**: each network's bands, security, VLAN and clients. Tap Show for
+  the password and a QR code a phone can scan to join. The panel asks for the system PIN first when
+  one is set (a web browser signed in with the PIN is not asked again). It hides itself after a minute.
 - **Setup**: controller address, port and site on the panel; the sign-in (an API key, or a local
   admin's username and password) in the web view.
 
@@ -20,7 +21,7 @@ Machine, Cloud Gateway, Cloud Key, UniFi OS Server) or a self-hosted UniFi Netwo
 
 Everything shown is read from the controller every few seconds and kept only in memory: nothing about
 the network is saved. State holds which switch, port and Wi-Fi network the panel shows; config holds
-the address, port, site, the pinned certificate and two switches. Starting, restoring a save, resuming
+the address, port, site, the pinned certificate and the Allow changes switch. Starting, restoring a save, resuming
 after a power cut and reconnecting only read (GET requests). The module changes the network only when
 someone sets port VLANs or adopts a device, and only with **Allow changes** on in Setup (it is off by
 default). After a change it shows what the controller then reports, never a guess.
