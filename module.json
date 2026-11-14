@@ -1,0 +1,22 @@
+{
+  "id": "unifi-viewer",
+  "name": "UniFi Viewer",
+  "version": "0.1.0",
+  "description": "Network health, switch ports, adoption and Wi-Fi from a UniFi controller",
+  "icon": "assets/icon.svg",
+  "apiVersion": 1,
+  "entry": "dist/index.js",
+  "ui": "ui",
+  "configSchema": "config.schema.json",
+  "defaults": "config.defaults.json",
+  "web": {
+    "ui": "web",
+    "pages": [
+      { "id": "overview", "label": "Overview" },
+      { "id": "switches", "label": "Switches" },
+      { "id": "adopt", "label": "Adopt" },
+      { "id": "wifi", "label": "Wi-Fi" },
+      { "id": "setup", "label": "Setup" }
+    ]
+  }
+}
