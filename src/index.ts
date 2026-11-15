@@ -45,6 +45,7 @@ export interface Config {
 type C = Ctx<State, Config>;
 export type View = 'overview' | 'switches' | 'adopt' | 'wifi' | 'setup';
 const VIEWS: View[] = ['overview', 'switches', 'adopt', 'wifi', 'setup'];
+const STRIP_VIEWS: View[] = ['overview', 'switches', 'adopt', 'wifi'];
 
 export const KEY = { OVERVIEW: 0, SWITCHES: 1, ADOPT: 2, WIFI: 3, MORE: 9, PREV: 10, NEXT: 11, BACK: 12, REVERT: 13, SAVE: 14 } as const;
 const HOLD_MS = 700;
@@ -299,6 +300,12 @@ export async function draw(ctx: C, clientId?: string): Promise<void> {
 async function setView(ctx: C, v: unknown): Promise<void> {
   if (!rt || !VIEWS.includes(v as View)) return;
   rt.view = v as View;
+  // Keys and buttons change page too, so the strip highlight follows. Setup has no strip icon.
+  // strip.select is newer than some SDKs and hosts this runs on: without it the highlight stays put.
+  if (STRIP_VIEWS.includes(rt.view)) {
+    const strip = ctx.strip as typeof ctx.strip & { select?(id: string): Promise<void> };
+    void strip.select?.(rt.view).catch(() => {});
+  }
   await draw(ctx);
 }
 
