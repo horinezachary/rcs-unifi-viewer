@@ -1,0 +1,506 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      html, body { height: 100%; overflow: hidden; }
+      main { height: 100%; display: flex; flex-direction: column; padding: 16px 32px 18px; gap: 12px; box-sizing: border-box; }
+      header { display: flex; align-items: center; gap: 16px; min-height: 48px; }
+      h1 { margin: 0; font-size: 26px; font-weight: 700; white-space: nowrap; }
+      .device { font: 15px var(--rcs-mono); color: var(--rcs-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+      .grow { flex: 1; }
+      .note { margin: 0; color: var(--rcs-muted); font-size: 15px; line-height: 1.45; }
+      .empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; }
+      .empty p { margin: 0; color: var(--rcs-muted); font-size: 17px; max-width: 820px; line-height: 1.5; }
+      .tabs { display: flex; gap: 8px; }
+      .tabs button { height: 44px; padding: 0 16px; border-radius: 10px; font: 600 15px var(--rcs-font); color: var(--rcs-text); background: var(--rcs-surface); border: 1px solid var(--rcs-border); cursor: pointer; }
+      .tabs button[aria-pressed=true] { border-color: var(--rcs-accent); color: var(--rcs-accent); }
+
+      /* overview */
+      .overview { flex: 1; min-height: 0; display: grid; grid-template-columns: 300px 1fr 640px; gap: 16px; }
+      .stats { display: grid; grid-template-rows: repeat(4, 1fr); gap: 10px; }
+      .stat { border: 1px solid var(--rcs-border); border-radius: 12px; background: var(--rcs-surface); padding: 8px 14px; display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 0 10px; }
+      .stat .k { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; color: var(--rcs-muted); }
+      .stat .v { font: 700 22px var(--rcs-mono); text-align: right; }
+      .stat .s { grid-column: 1 / -1; font-size: 13px; color: var(--rcs-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .good { color: var(--rcs-ok); }
+      .bad { color: var(--rcs-error); }
+      .warn { color: var(--rcs-warn); }
+      .graph { border: 1px solid var(--rcs-border); border-radius: 12px; background: var(--rcs-surface); padding: 10px 14px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+      .graph .top { display: flex; gap: 16px; align-items: baseline; font-size: 13px; color: var(--rcs-muted); }
+      .graph .cap { font-weight: 600; letter-spacing: 0.08em; }
+      .graph b { font: 700 18px var(--rcs-mono); color: var(--rcs-text); }
+      .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; }
+      .plot { flex: 1; min-height: 0; display: grid; grid-template-columns: 44px 1fr; gap: 6px; }
+      .axis { display: flex; flex-direction: column; justify-content: space-between; font: 11px var(--rcs-mono); color: var(--rcs-muted); text-align: right; }
+      svg { width: 100%; height: 100%; display: block; }
+      .devices { overflow: hidden; border: 1px solid var(--rcs-border); border-radius: 12px; background: var(--rcs-surface); }
+      table { width: 100%; border-collapse: collapse; font-size: 14px; }
+      th { text-align: left; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; color: var(--rcs-muted); padding: 8px 10px; border-bottom: 1px solid var(--rcs-border); }
+      td { padding: 6px 10px; border-bottom: 1px solid var(--rcs-border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+      td.mono { font-family: var(--rcs-mono); color: var(--rcs-muted); }
+
+      /* switches */
+      .ports { display: grid; gap: 8px; }
+      .port { height: 82px; border-radius: 10px; padding: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: var(--rcs-text);
+        font: 13px var(--rcs-font); cursor: pointer; border: 1px solid var(--rcs-border); background: var(--rcs-surface); min-width: 0; }
+      .port .n { font: 700 15px var(--rcs-mono); display: flex; align-items: center; gap: 5px; }
+      .port .dot { width: 8px; height: 8px; border-radius: 4px; background: var(--rcs-muted); }
+      .port .dot.up { background: var(--rcs-ok); }
+      .port .vl { font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .port .sub { font-size: 11px; color: var(--rcs-muted); }
+      .port.down { opacity: 0.6; }
+      .port.pending { border: 2px dashed var(--rcs-accent); }
+      .port.sel { border: 3px solid var(--rcs-accent); opacity: 1; }
+      .selbar { display: flex; align-items: center; gap: 14px; min-height: 48px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--rcs-border); background: var(--rcs-surface); white-space: nowrap; }
+      .selbar .p { font: 700 20px var(--rcs-mono); }
+      .selbar .i { color: var(--rcs-muted); font-size: 15px; overflow: hidden; text-overflow: ellipsis; }
+      .selbar .k { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; color: var(--rcs-muted); }
+      .selbar .v { font: 700 18px var(--rcs-mono); }
+      .selbar .to { color: var(--rcs-accent); font: 700 18px var(--rcs-mono); }
+
+      /* adopt */
+      .scroll { flex: 1; min-height: 0; overflow-y: auto; }
+      .list { border: 1px solid var(--rcs-border); border-radius: 12px; background: var(--rcs-surface); }
+      .item { display: flex; align-items: center; gap: 18px; padding: 12px 18px; border-bottom: 1px solid var(--rcs-border); }
+      .item:last-child { border-bottom: 0; }
+      .mono-badge { width: 54px; height: 54px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font: 700 15px var(--rcs-mono); background: var(--rcs-bg); border: 1px solid var(--rcs-border); }
+      .item .t { flex: 1; min-width: 0; }
+      .item .n { font-size: 18px; font-weight: 600; }
+      .item .d { font: 14px var(--rcs-mono); color: var(--rcs-muted); margin-top: 4px; }
+
+      /* wifi */
+      .wifi { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 480px 300px; gap: 16px; }
+      .ssids { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+      .ssid { min-height: 64px; border-radius: 12px; padding: 0 18px; display: flex; align-items: center; gap: 14px; color: var(--rcs-text); background: var(--rcs-surface);
+        border: 1px solid var(--rcs-border); cursor: pointer; text-align: left; font: inherit; }
+      .ssid[aria-pressed=true] { border: 2px solid var(--rcs-accent); }
+      .ssid .t { flex: 1; min-width: 0; }
+      .ssid .n { font-size: 18px; font-weight: 600; }
+      .ssid .d { font-size: 13px; color: var(--rcs-muted); margin-top: 3px; }
+      .ssid .c { font: 600 15px var(--rcs-mono); color: var(--rcs-muted); }
+      .detail { border: 1px solid var(--rcs-border); border-radius: 12px; background: var(--rcs-surface); padding: 18px 20px; display: flex; flex-direction: column; gap: 8px; }
+      .detail .k { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; color: var(--rcs-muted); margin-top: 6px; }
+      .detail .big { font: 700 24px var(--rcs-mono); word-break: break-all; }
+      .qr { border-radius: 12px; background: #fff; display: flex; align-items: center; justify-content: center; padding: 14px; }
+      .qr.off { background: var(--rcs-surface); border: 1px dashed var(--rcs-border); color: var(--rcs-muted); font-size: 15px; text-align: center; }
+
+      /* setup */
+      .setup { flex: 1; display: grid; grid-template-columns: 340px 200px 1fr 1fr; gap: 28px; align-items: start; }
+      .col { display: flex; flex-direction: column; gap: 14px; }
+      .toggle { display: flex; align-items: center; gap: 14px; font-size: 16px; }
+      dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 7px 16px; font-size: 14px; }
+      dt { color: var(--rcs-muted); }
+      dd { margin: 0; font-family: var(--rcs-mono); word-break: break-all; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1 id="title">Network overview</h1>
+        <span class="device" id="device"></span>
+        <rcs-status id="status" connection="disconnected"></rcs-status>
+        <div class="grow"></div>
+        <div class="tabs" id="swTabs" role="group" aria-label="Switch"></div>
+        <rcs-button id="toSetup" size="small">Setup</rcs-button>
+      </header>
+
+      <div class="empty" id="offline" hidden>
+        <p id="offlineText"></p>
+        <rcs-button id="offlineSetup" variant="primary">Open Setup</rcs-button>
+      </div>
+
+      <section id="view-overview" class="overview" hidden>
+        <div class="stats" id="stats"></div>
+        <section class="graph" aria-label="WAN bandwidth">
+          <div class="top">
+            <span class="cap">WAN BANDWIDTH</span><span id="span"></span>
+            <div class="grow"></div>
+            <span><span class="sw" style="background: #5B8DEF"></span>Down <b id="dlNow">0</b> Mb/s</span>
+            <span><span class="sw" style="background: #F5A524"></span>Up <b id="ulNow">0</b> Mb/s</span>
+          </div>
+          <div class="plot">
+            <div class="axis" id="axis"></div>
+            <svg viewBox="0 0 600 200" preserveAspectRatio="none" role="img" id="graph">
+              <g stroke="var(--rcs-border)" stroke-width="1" vector-effect="non-scaling-stroke">
+                <line x1="0" y1="0.5" x2="600" y2="0.5" vector-effect="non-scaling-stroke" />
+                <line x1="0" y1="50" x2="600" y2="50" vector-effect="non-scaling-stroke" />
+                <line x1="0" y1="100" x2="600" y2="100" vector-effect="non-scaling-stroke" />
+                <line x1="0" y1="150" x2="600" y2="150" vector-effect="non-scaling-stroke" />
+                <line x1="0" y1="199.5" x2="600" y2="199.5" vector-effect="non-scaling-stroke" />
+              </g>
+              <polygon id="dlArea" fill="rgba(91,141,239,0.16)" />
+              <polygon id="ulArea" fill="rgba(245,165,36,0.14)" />
+              <polyline id="dlLine" fill="none" stroke="#5B8DEF" stroke-width="2.5" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+              <polyline id="ulLine" fill="none" stroke="#F5A524" stroke-width="2.5" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+            </svg>
+          </div>
+        </section>
+        <div class="devices">
+          <table>
+            <thead><tr><th>Device</th><th>Status</th><th>IP</th><th>Clients</th><th>Uptime</th></tr></thead>
+            <tbody id="devices"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="view-switches" hidden style="flex-direction: column; gap: 12px">
+        <div class="ports" id="ports"></div>
+        <div class="selbar" id="selbar"></div>
+        <p class="note" id="swHint"></p>
+      </section>
+
+      <section id="view-adopt" class="scroll" hidden>
+        <p class="note" style="margin-bottom: 10px" id="adoptNote"></p>
+        <div class="list" id="adoptList"></div>
+      </section>
+
+      <section id="view-wifi" class="wifi" hidden>
+        <div class="ssids" id="ssids"></div>
+        <div class="detail" id="wifiDetail"></div>
+        <div class="qr off" id="qr"></div>
+      </section>
+
+      <section id="view-setup" class="setup" hidden>
+        <div class="col">
+          <rcs-field id="address" label="Controller IP address" kind="ip" placeholder="192.168.1.1"></rcs-field>
+          <div style="display: flex; gap: 10px"><rcs-button id="reconnect" size="small">Reconnect</rcs-button><rcs-button id="trust" size="small" variant="danger" hidden>Trust new certificate</rcs-button></div>
+        </div>
+        <div class="col">
+          <rcs-field id="port" label="Port" kind="number"></rcs-field>
+        </div>
+        <div class="col">
+          <label class="toggle"><rcs-toggle id="allowChanges" label="Allow changes"></rcs-toggle>Allow changes: set port VLANs, adopt devices</label>
+          <div class="k note">Site</div>
+          <div class="tabs" id="sites" role="group" aria-label="Site" style="flex-wrap: wrap"></div>
+        </div>
+        <div class="col">
+          <dl id="info"></dl>
+          <p class="note">The API key or login is set in the web view's Setup page.</p>
+        </div>
+      </section>
+    </main>
+
+    <rcs-dialog id="confirm">
+      <span id="confirmText"></span>
+      <div slot="buttons">
+        <rcs-button id="no">Cancel</rcs-button>
+        <rcs-button id="yes" variant="primary">OK</rcs-button>
+      </div>
+    </rcs-dialog>
+
+    <script type="module">
+      const $ = (id) => document.getElementById(id);
+      const TITLES = { overview: 'Network overview', switches: 'Switch ports', adopt: 'Waiting for adoption', wifi: 'Wi-Fi networks', setup: 'Setup' };
+      const VLAN_COLORS = ['#8C95A1', '#5B8DEF', '#B57BFF', '#3DD68C', '#FF8A4C', '#4CC9F0', '#FF6B9A', '#D4D46A', '#A0E26B', '#E879F9', '#F87171', '#60A5FA'];
+      let s = null;
+      let onYes = null;
+      let revealed = null; // { id, name, password, qr } for this screen only
+      let revealTimer = null;
+
+      function el(tag, attrs = {}, text) {
+        const e = document.createElement(tag);
+        for (const [k, v] of Object.entries(attrs)) {
+          if (v === true) e.setAttribute(k, '');
+          else if (v !== false && v != null) e.setAttribute(k, String(v));
+        }
+        if (text != null) e.textContent = text;
+        return e;
+      }
+
+      function ask(text, label, variant, fn) {
+        $('confirmText').textContent = text;
+        $('yes').textContent = label;
+        $('yes').setAttribute('variant', variant);
+        onYes = fn;
+        $('confirm').show();
+      }
+      $('no').onclick = () => $('confirm').close();
+      $('yes').onclick = () => {
+        $('confirm').close();
+        onYes?.();
+      };
+
+      const netColor = (id) => {
+        const i = s.networks.findIndex((n) => n.id === id);
+        return i < 0 ? '#8C95A1' : VLAN_COLORS[i % VLAN_COLORS.length];
+      };
+      const netName = (id) => s.networks.find((n) => n.id === id)?.name ?? '?';
+      const netVlan = (id) => s.networks.find((n) => n.id === id)?.vlan ?? '?';
+      const mbps = (b) => (b / 1e6 >= 100 ? (b / 1e6).toFixed(0) : (b / 1e6).toFixed(1));
+      const speed = (m) => (m >= 1000 ? `${m / 1000} Gbps` : m ? `${m} Mbps` : 'no link');
+      function uptime(sec) {
+        if (!sec) return '–';
+        const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
+        return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
+      }
+      const STATE = { online: ['Online', 'good'], offline: ['Offline', 'bad'], pending: ['Pending', 'warn'], adopting: ['Adopting', 'warn'], provisioning: ['Provisioning', 'warn'], upgrading: ['Upgrading', 'warn'], unknown: ['Unknown', ''] };
+
+      function niceMax(v) {
+        for (const m of [10e6, 50e6, 100e6, 250e6, 500e6, 1e9, 2.5e9, 5e9, 10e9, 25e9]) if (v <= m) return m;
+        return Math.ceil(v / 1e10) * 1e10;
+      }
+      const axisLabel = (b) => String(Math.round(b / 1e6));
+
+      function drawOverview() {
+        const h = s.health;
+        const adopted = s.devices.filter((d) => d.adopted);
+        const offline = adopted.filter((d) => d.state === 'offline');
+        const waiting = s.devices.filter((d) => !d.adopted).length;
+        const stats = [
+          ['WAN', h ? (h.wanStatus === 'online' ? 'Online' : h.wanStatus === 'offline' ? 'Down' : '–') : '–', h ? [h.isp, h.latency != null ? `${h.latency} ms` : ''].filter(Boolean).join(' · ') || h.wanIp : '', h?.wanStatus === 'online' ? 'good' : h?.wanStatus === 'offline' ? 'bad' : ''],
+          ['CLIENTS', h ? String(h.wired + h.wireless) : '–', h ? `${h.wireless} wireless · ${h.wired} wired` : '', ''],
+          ['DEVICES', `${adopted.length - offline.length} / ${adopted.length}`, offline.length ? `${offline.length} offline: ${offline.map((d) => d.name).join(', ')}` : 'all online', offline.length ? 'warn' : ''],
+          ['PENDING', String(waiting), 'waiting for adoption', waiting ? 'warn' : '']
+        ];
+        $('stats').replaceChildren(
+          ...stats.map(([k, v, sub, cls]) => {
+            const box = el('div', { class: 'stat' });
+            box.append(el('span', { class: 'k' }, k), el('span', { class: 'v ' + cls }, v), el('span', { class: 's' }, sub));
+            return box;
+          })
+        );
+
+        const hist = s.history;
+        const max = niceMax(Math.max(1, ...hist.flat()));
+        $('axis').replaceChildren(...[1, 0.75, 0.5, 0.25, 0].map((f) => el('span', {}, axisLabel(max * f))));
+        const n = Math.max(hist.length - 1, 1);
+        const pts = (k) => hist.map((x, i) => `${((i / n) * 600).toFixed(1)},${(200 - (x[k] / max) * 200).toFixed(1)}`).join(' ');
+        const dl = pts(0), ul = pts(1);
+        $('dlLine').setAttribute('points', dl);
+        $('ulLine').setAttribute('points', ul);
+        $('dlArea').setAttribute('points', hist.length ? `0,200 ${dl} 600,200` : '');
+        $('ulArea').setAttribute('points', hist.length ? `0,200 ${ul} 600,200` : '');
+        const now = hist.at(-1) ?? [0, 0];
+        $('dlNow').textContent = mbps(now[0]);
+        $('ulNow').textContent = mbps(now[1]);
+        $('span').textContent = `last ${Math.round((hist.length * 5) / 60) || 1} min`;
+        $('graph').setAttribute('aria-label', `WAN bandwidth. Down now ${mbps(now[0])} Mb/s, up ${mbps(now[1])} Mb/s.`);
+
+        $('devices').replaceChildren(
+          ...adopted.slice(0, 8).map((d) => {
+            const tr = el('tr');
+            const [label, cls] = STATE[d.state] ?? STATE.unknown;
+            tr.append(el('td', {}, d.name), el('td', { class: cls }, label), el('td', { class: 'mono' }, d.ip || '–'), el('td', { class: 'mono' }, String(d.clients)), el('td', { class: 'mono' }, d.state === 'online' ? uptime(d.uptime) : '–'));
+            return tr;
+          })
+        );
+      }
+
+      function drawSwitches() {
+        const sw = s.switch;
+        const tabs = s.devices.filter((d) => d.adopted && d.portCount > 0);
+        $('swTabs').replaceChildren(
+          ...tabs.map((d) => {
+            const b = el('button', { 'aria-pressed': String(sw?.mac === d.mac) }, d.name);
+            b.onclick = () => rcs.send({ type: 'select-switch', mac: d.mac });
+            return b;
+          })
+        );
+        if (!sw) {
+          $('ports').replaceChildren(el('p', { class: 'note' }, 'No switches on this site.'));
+          $('selbar').hidden = true;
+          return;
+        }
+        $('selbar').hidden = false;
+        const pend = new Map(s.pending);
+        const cols = Math.min(26, Math.ceil(sw.ports.length / 2));
+        $('ports').style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+        $('ports').replaceChildren(
+          ...sw.ports.map((p) => {
+            const shown = pend.get(p.idx) ?? p.networkId;
+            const c = netColor(shown);
+            const b = el('button', { class: 'port' + (p.up ? '' : ' down') + (pend.has(p.idx) ? ' pending' : '') + (p.idx === s.selPort ? ' sel' : ''), 'aria-label': `Port ${p.idx}` });
+            b.style.background = `color-mix(in srgb, ${c} ${p.up ? 20 : 8}%, var(--rcs-surface))`;
+            if (!pend.has(p.idx) && p.idx !== s.selPort) b.style.borderColor = `color-mix(in srgb, ${c} 55%, transparent)`;
+            const n = el('span', { class: 'n' });
+            n.append(el('span', { class: 'dot' + (p.up ? ' up' : '') }), String(p.idx));
+            b.append(n, el('span', { class: 'vl' }, netName(shown)), el('span', { class: 'sub' }, pend.has(p.idx) ? 'unsaved' : p.up ? speed(p.speed) : 'no link'));
+            b.onclick = () => rcs.send({ type: 'select-port', idx: p.idx });
+            return b;
+          })
+        );
+        const p = sw.ports.find((x) => x.idx === s.selPort) ?? sw.ports[0];
+        const bar = [];
+        if (p) {
+          const info = [p.client || (p.up ? 'Unknown device' : 'Nothing connected'), speed(p.speed), p.poe ? `PoE ${p.poeWatts ? p.poeWatts.toFixed(1) + ' W' : 'on'}` : 'PoE off', p.uplink ? 'uplink' : '', p.profile ? `profile ${p.profile}` : ''].filter(Boolean);
+          bar.push(el('span', { class: 'p' }, `Port ${p.idx}`), el('span', { class: 'i' }, info.join(' · ')), el('div', { class: 'grow' }), el('span', { class: 'k' }, 'VLAN'), el('span', { class: 'v' }, `${netName(p.networkId)} (${netVlan(p.networkId)})`));
+          if (pend.has(p.idx)) bar.push(el('span', { class: 'to' }, '→'), el('span', { class: 'to' }, `${netName(pend.get(p.idx))} (${netVlan(pend.get(p.idx))})`));
+        }
+        if (pend.size) {
+          const revert = el('rcs-button', { size: 'small' }, 'Revert');
+          revert.onclick = () => rcs.send({ type: 'revert' });
+          const save = el('rcs-button', { size: 'small', variant: 'primary' }, `Save ${pend.size}`);
+          save.onclick = () =>
+            ask(`Change the VLAN of ${pend.size} port${pend.size > 1 ? 's' : ''} on ${sw.name}? Devices on ${pend.size > 1 ? 'them' : 'it'} will move networks.`, 'Save', 'primary', () => rcs.send({ type: 'save' }));
+          bar.push(revert, save);
+        }
+        $('selbar').replaceChildren(...bar);
+        $('swHint').textContent = !s.config.allowChanges
+          ? 'View only. Turn on Allow changes in Setup to change port VLANs.'
+          : pend.size
+            ? `${pend.size} unsaved change${pend.size > 1 ? 's' : ''} on this switch. Hold SAVE (key 15) or tap Save to apply, or REVERT.`
+            : 'Tap a port, pick its VLAN on the Stream Deck, then hold SAVE (key 15).';
+      }
+
+      function drawAdopt() {
+        const waiting = s.devices.filter((d) => !d.adopted);
+        $('adoptNote').textContent = s.config.allowChanges
+          ? 'Devices on this network waiting to be adopted into the site. Adopting provisions them with the site settings.'
+          : 'Devices waiting to be adopted. Turn on Allow changes in Setup to adopt them from here.';
+        if (!waiting.length) return $('adoptList').replaceChildren(el('div', { class: 'item' }, 'Nothing is waiting for adoption.'));
+        $('adoptList').replaceChildren(
+          ...waiting.map((d) => {
+            const row = el('div', { class: 'item' });
+            const mono = d.kind === 'ap' ? 'AP' : d.kind === 'switch' ? 'SW' : d.kind === 'gateway' ? 'GW' : '?';
+            const t = el('div', { class: 't' });
+            t.append(el('div', { class: 'n' }, d.model || 'Device'), el('div', { class: 'd' }, [d.mac, d.ip, d.version && `firmware ${d.version}`].filter(Boolean).join(' · ')));
+            const b = el('rcs-button', { variant: 'primary', disabled: !s.config.allowChanges }, 'Adopt');
+            b.onclick = () => ask(`Adopt this ${d.model || 'device'} (${d.mac}) into the site?`, 'Adopt', 'primary', () => rcs.send({ type: 'adopt', mac: d.mac }));
+            row.append(el('span', { class: 'mono-badge' }, mono), t, b);
+            return row;
+          })
+        );
+      }
+
+      function drawQr(rows) {
+        const n = rows.length;
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('viewBox', `-2 -2 ${n + 4} ${n + 4}`);
+        svg.setAttribute('shape-rendering', 'crispEdges');
+        svg.setAttribute('role', 'img');
+        svg.setAttribute('aria-label', `QR code to join ${revealed.name}`);
+        let d = '';
+        rows.forEach((r, y) => [...r].forEach((c, x) => c === '1' && (d += `M${x} ${y}h1v1h-1z`)));
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', d);
+        path.setAttribute('fill', '#111');
+        svg.append(path);
+        return svg;
+      }
+
+      function drawWifi() {
+        const sel = s.wlans.find((w) => w.id === s.ssid) ?? s.wlans[0];
+        $('ssids').replaceChildren(
+          ...s.wlans.map((w) => {
+            const b = el('button', { class: 'ssid', 'aria-pressed': String(w.id === sel?.id) });
+            const t = el('span', { class: 't' });
+            t.append(el('div', { class: 'n' }, w.name + (w.enabled ? '' : ' (off)')), el('div', { class: 'd' }, `${w.bands} · ${w.security} · VLAN ${w.vlan}`));
+            b.append(t, el('span', { class: 'c' }, `${w.clients} clients`));
+            b.onclick = () => rcs.send({ type: 'select-ssid', id: w.id });
+            return b;
+          })
+        );
+        if (revealed && revealed.id !== sel?.id) revealed = null;
+        if (!sel) {
+          $('wifiDetail').replaceChildren(el('p', { class: 'note' }, 'No Wi-Fi networks on this site.'));
+          $('qr').className = 'qr off';
+          $('qr').replaceChildren();
+          return;
+        }
+        const parts = [el('span', { class: 'k' }, 'NETWORK'), el('span', { class: 'big' }, sel.name), el('span', { class: 'note' }, `${sel.security} · ${sel.bands} · ${sel.clients} clients`)];
+        if (sel.qrType === 'WPA') {
+          parts.push(el('span', { class: 'k' }, 'PASSWORD'), el('span', { class: 'big' }, revealed ? revealed.password : '••••••••••••'));
+        } else if (!sel.qrType) {
+          parts.push(el('span', { class: 'note' }, 'Enterprise sign-in: each person logs in with their own account.'));
+        }
+        if (sel.qrType) {
+          if (revealed) {
+            const hide = el('rcs-button', { size: 'small' }, 'Hide');
+            hide.onclick = () => ((revealed = null), drawWifi());
+            parts.push(el('div', {}, ''), hide);
+          } else {
+            const show = el('rcs-button', { size: 'small', variant: 'primary' }, sel.qrType === 'WPA' ? 'Show password and QR' : 'Show QR');
+            show.onclick = () => rcs.send({ type: 'reveal', id: sel.id });
+            parts.push(el('div', {}, ''), show);
+            if (sel.qrType === 'WPA') parts.push(el('span', { class: 'note' }, 'Asks for the system PIN when one is set.'));
+          }
+        }
+        $('wifiDetail').replaceChildren(...parts);
+        if (revealed) {
+          $('qr').className = 'qr';
+          $('qr').replaceChildren(drawQr(revealed.qr));
+        } else {
+          $('qr').className = 'qr off';
+          $('qr').replaceChildren(el('span', {}, sel.qrType ? 'The join QR code shows here' : 'No QR code for enterprise sign-in'));
+        }
+      }
+
+      function drawSetup() {
+        if (!$('address').matches('[editing]')) $('address').value = s.config.address;
+        if (!$('port').matches('[editing]')) $('port').value = String(s.config.port);
+        $('allowChanges').checked = s.config.allowChanges;
+        const sites = s.sites.length ? s.sites : [{ name: s.config.site, desc: s.config.site }];
+        $('sites').replaceChildren(
+          ...sites.map((x) => {
+            const b = el('button', { 'aria-pressed': String(x.name === s.config.site) }, x.desc);
+            b.onclick = () => rcs.send({ type: 'config', config: { site: x.name } });
+            return b;
+          })
+        );
+        $('trust').hidden = !s.certificateSeen;
+        const fp = (f) => (f ? f.split(':').slice(0, 8).join(':') + '…' : '–');
+        const rows = [
+          ['Status', s.statusText || (s.ready ? 'Connected' : s.connection)],
+          ['Controller', s.kind === 'unifi-os' ? 'UniFi OS' : s.kind === 'classic' ? 'Network application' : '–'],
+          ['Sign-in', s.credentials.apiKey ? 'API key' : s.credentials.username ? `user ${s.credentials.username}` : 'not set'],
+          ['Certificate', fp(s.config.fingerprint)]
+        ];
+        if (s.certificateSeen) rows.push(['Now presents', fp(s.certificateSeen)]);
+        $('info').replaceChildren(...rows.flatMap(([k, v]) => [el('dt', {}, k), el('dd', {}, v)]));
+      }
+
+      function draw() {
+        if (!s) return;
+        const v = s.view;
+        $('title').textContent = TITLES[v];
+        $('status').setAttribute('connection', s.connection);
+        $('status').textContent = s.ready ? 'Connected' : '';
+        const site = s.sites.find((x) => x.name === s.config.site)?.desc ?? s.config.site;
+        $('device').textContent = s.config.address ? `${s.config.address} · Site: ${site}` : '';
+        $('swTabs').hidden = v !== 'switches' || !s.ready;
+        $('toSetup').hidden = v === 'setup' || v === 'switches';
+        const live = s.ready || v === 'setup';
+        $('offline').hidden = live;
+        if (!live) {
+          $('offlineText').textContent = s.statusText || 'Connecting…';
+          $('offlineSetup').hidden = false;
+        }
+        for (const x of ['overview', 'switches', 'adopt', 'wifi', 'setup']) $('view-' + x).hidden = !live || x !== v;
+        $('view-switches').style.display = live && v === 'switches' ? 'flex' : 'none';
+        if (!live) return;
+        if (v === 'overview') drawOverview();
+        if (v === 'switches') drawSwitches();
+        if (v === 'adopt') drawAdopt();
+        if (v === 'wifi') drawWifi();
+        if (v === 'setup') drawSetup();
+      }
+
+      $('toSetup').onclick = () => rcs.send({ type: 'view', view: 'setup' });
+      $('offlineSetup').onclick = () => rcs.send({ type: 'view', view: 'setup' });
+      $('reconnect').onclick = () => rcs.send({ type: 'reconnect' });
+      $('trust').onclick = () =>
+        ask('The controller is showing a different certificate than before. Trust it only if you replaced the controller or its certificate.', 'Trust', 'danger', () => rcs.send({ type: 'trust' }));
+      $('address').addEventListener('change', (e) => rcs.send({ type: 'config', config: { address: e.detail } }));
+      $('port').addEventListener('change', (e) => rcs.send({ type: 'config', config: { port: Number(e.detail) } }));
+      $('allowChanges').addEventListener('change', (e) => rcs.send({ type: 'config', config: { allowChanges: e.detail } }));
+
+      await rcs.ready();
+      rcs.on('message', (m) => {
+        if (m?.type === 'snapshot') {
+          s = m;
+          draw();
+        } else if (m?.type === 'reveal') {
+          revealed = m;
+          clearTimeout(revealTimer);
+          revealTimer = setTimeout(() => ((revealed = null), draw()), 60_000); // never left up on the rack
+          draw();
+        }
+      });
+      rcs.on('visibility', (visible) => {
+        if (!visible && revealed) (revealed = null), draw();
+      });
+      rcs.send({ type: 'hello' });
+    </script>
+  </body>
+</html>
