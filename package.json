@@ -20,7 +20,7 @@
       "assets",
       "vendor"
     ],
-    "sdkRef": "claude/project-thread-mfx0hh"
+    "sdkRef": "v0.7.0"
   },
   "peerDependencies": {
     "@rcs/module-sdk": ">=0.1.0"
