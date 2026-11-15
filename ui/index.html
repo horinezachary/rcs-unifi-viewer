@@ -304,10 +304,17 @@
         }
         $('selbar').hidden = false;
         const pend = new Map(s.pending);
-        const cols = Math.min(26, Math.ceil(sw.ports.length / 2));
-        $('ports').style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+        // Laid out like the switch's front panel: odd ports on the top row, even ports below them.
+        // Small switches (8 ports or fewer) have one row.
+        const ports = [...sw.ports].sort((a, b) => a.idx - b.idx);
+        const rows = ports.length > 8 ? 2 : 1;
+        const grid = $('ports').style;
+        grid.gridAutoFlow = 'column';
+        grid.gridTemplateRows = `repeat(${rows}, auto)`;
+        grid.gridAutoColumns = 'minmax(0, 1fr)';
+        grid.gridTemplateColumns = '';
         $('ports').replaceChildren(
-          ...sw.ports.map((p) => {
+          ...ports.map((p) => {
             const shown = pend.get(p.idx) ?? p.networkId;
             const c = netColor(shown);
             const b = el('button', { class: 'port' + (p.up ? '' : ' down') + (pend.has(p.idx) ? ' pending' : '') + (p.idx === s.selPort ? ' sel' : ''), 'aria-label': `Port ${p.idx}` });
