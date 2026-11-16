@@ -34,11 +34,12 @@ after a power cut and reconnecting only read (GET requests). The module changes 
 someone sets port VLANs or adopts a device, and only with **Allow changes** on in Setup (it is off by
 default). After a change it shows what the controller then reports, never a guess.
 
-The API key or password is a module secret (host 0.14.0 or later): the controller keeps it apart from
-state and config and never sends it to a UI. Named saves include it, so restoring a save or loading
-it on another unit brings the login back. A downloaded save carries it only sealed with a passphrase
-you pick, or not at all. Module Reset or a factory reset removes it. Earlier versions kept it in
-`credentials.json` in the data folder; the first start after updating moves it into the secrets.
+The API key or password is a module secret: the controller keeps it apart from state and config and
+never sends it to a UI. Named saves include it, so restoring a save or loading it on another unit
+brings the login back. A downloaded save carries it only sealed with a passphrase you pick, or not at
+all. Module Reset or a factory reset removes it. Earlier versions kept it in `credentials.json` in the
+data folder; the first start on controller 0.14.0 or later moves it into the secrets. An older
+controller has no secrets, so there the module keeps using that file and saves leave the login out.
 
 ## Certificates
 

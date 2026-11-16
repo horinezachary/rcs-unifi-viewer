@@ -235,6 +235,18 @@ describe('module', () => {
     expect(last()?.credentials).toMatchObject({ apiKey: true });
   });
 
+  it('keeps credentials.json on a controller without secrets', async () => {
+    const port = await startMock();
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), 'unifi-old-host-'));
+    await writeFile(path.join(dataDir, 'credentials.json'), JSON.stringify({ apiKey: 'k3y' }));
+    sim = await startTestModule(mod, { config: { ...BASE, port }, dataDir, noSecrets: true });
+    await until(() => last()?.ready === true);
+    await sim.sendUi({ type: 'credentials', apiKey: 'n3w' });
+    await until(() => sim!.logs.some((l) => l.text === 'Set a new API key')); // after the file is written
+    expect(JSON.parse(await readFile(path.join(dataDir, 'credentials.json'), 'utf8'))).toEqual({ apiKey: 'n3w' });
+    expect(sim.errors).toEqual([]);
+  });
+
   it('moves credentials.json from an older version into the secrets', async () => {
     const port = await startMock();
     const dataDir = await mkdtemp(path.join(os.tmpdir(), 'unifi-legacy-'));
