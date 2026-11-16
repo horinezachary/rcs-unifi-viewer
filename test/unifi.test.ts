@@ -230,6 +230,9 @@ describe('module', () => {
     await startModule(port);
     await until(() => last()?.trunks?.length === 3);
     expect(sim!.keys[KEY.TRUNKS]).toMatchObject({ label: 'TRUNKS', sublabel: '⚠ 1 BUSY' });
+    // Five strip icons where the controller takes them; four (no Trunks) on older ones.
+    const ids = sim!.strip.map((i) => i.id);
+    expect(ids).toEqual(last()?.trunksIcon ? ['overview', 'switches', 'trunks', 'adopt', 'wifi'] : ['overview', 'switches', 'adopt', 'wifi']);
     await sim!.press(KEY.TRUNKS);
     await until(() => last()?.view === 'trunks');
     const faces = [5, 6, 7].map((i) => sim!.keys[i]!);
