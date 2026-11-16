@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { UnifiClient } from '../src/client.js';
 import mod, { KEY, type Config, type State } from '../src/index.js';
 import { MockUnifi, type MockOptions } from '../src/mock.js';
-import { findTrunks, nativeNetwork, parseDevices, parseHealth, parseNetworks, speedTier, wifiQrText } from '../src/model.js';
+import { findTrunks, trunkTree, nativeNetwork, parseDevices, parseHealth, parseNetworks, speedTier, wifiQrText } from '../src/model.js';
 import { qrRows } from '../src/qr.js';
 
 let mock: MockUnifi | null = null;
@@ -112,6 +112,15 @@ describe('model', () => {
     expect(core.load).toBeCloseTo(0.16);
     expect(trunks.find((t) => t.down.device === 'Stage')!.load).toBeCloseTo(0.95);
     expect(trunks.find((t) => t.down.device === 'Mini')).toMatchObject({ speed: 100, toDown: 8e6 });
+  });
+
+  it('lays trunks out as a tree, children by port under their uplink', () => {
+    const t = (up: string, upPort: number, down: string) => ({ up: { mac: up, device: up.toUpperCase(), port: upPort }, down: { mac: down, device: down.toUpperCase(), port: 24 } }) as any;
+    const tree = trunkTree([t('core', 23, 'stage'), t('gw', 1, 'core'), t('core', 22, 'foh'), t('stage', 5, 'mini')]);
+    const at = Object.fromEntries(tree.nodes.map((n) => [n.mac, [n.depth, n.x]]));
+    expect(at).toEqual({ gw: [0, 0.5], core: [1, 0.5], foh: [2, 0], stage: [2, 1], mini: [3, 1] });
+    expect(tree).toMatchObject({ width: 2, depth: 4 });
+    expect(trunkTree([t('a', 1, 'b'), t('b', 2, 'a')]).nodes).toHaveLength(2); // a loop still shows both
   });
 
   it('escapes Wi-Fi QR text and makes a QR code', () => {

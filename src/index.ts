@@ -21,7 +21,7 @@ import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { defineModule, type Ctx, type KeySetParams } from '@rcs/module-sdk';
 import { UnifiClient, type Credentials } from './client.js';
-import { emptyView, wifiQrText, type Device, type NetworkView, type SpeedTier, type Trunk } from './model.js';
+import { emptyView, trunkTree, wifiQrText, type Device, type NetworkView, type SpeedTier, type Trunk } from './model.js';
 import { qrRows } from './qr.js';
 
 export interface State {
@@ -206,6 +206,7 @@ export function snapshot(ctx: C) {
     wlans: v.wlans,
     switch: switchView(sw),
     trunks: v.trunks,
+    trunkTree: trunkTree(v.trunks),
     trunksIcon: rt?.trunksIcon ?? false,
     selPort: ctx.state.value.selPort,
     pending: [...(rt?.pending ?? [])],
