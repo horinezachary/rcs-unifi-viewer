@@ -9,7 +9,7 @@
 
 import { EventEmitter } from 'node:events';
 import { CertificateChanged, request, type Response, type Target } from './http.js';
-import { emptyView, parseDevices, parseHealth, parseNetworks, parseWlans, type NetworkView } from './model.js';
+import { emptyView, findTrunks, parseDevices, parseHealth, parseNetworks, parseWlans, type NetworkView } from './model.js';
 
 export type Connection = 'connected' | 'connecting' | 'disconnected';
 
@@ -192,9 +192,11 @@ export class UnifiClient extends EventEmitter {
       const nets = parseNetworks(networks);
       this.rawDevices = new Map(devices.filter((d) => typeof d?._id === 'string').map((d) => [d._id, d]));
       this.passphrases = new Map(wlans.filter((w) => typeof w?._id === 'string' && typeof w.x_passphrase === 'string').map((w) => [w._id, w.x_passphrase]));
+      const parsed = parseDevices(devices, portconfs, nets, clients);
       this.view = {
         ...this.view,
-        devices: parseDevices(devices, portconfs, nets, clients),
+        devices: parsed,
+        trunks: findTrunks(parsed),
         networks: nets,
         wlans: parseWlans(wlans, nets, clients)
       };

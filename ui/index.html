@@ -59,6 +59,23 @@
       .selbar .v { font: 700 18px var(--rcs-mono); }
       .selbar .to { color: var(--rcs-accent); font: 700 18px var(--rcs-mono); }
 
+      /* trunks */
+      .legend { display: flex; gap: 14px; align-items: center; font: 600 13px var(--rcs-mono); color: var(--rcs-muted); white-space: nowrap; }
+      .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+      .trunks { flex: 1; min-height: 0; overflow-y: auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: 108px; gap: 12px; align-content: start; }
+      .trunk { position: relative; border-radius: 12px; padding: 10px 16px; display: grid; grid-template-columns: auto 1fr auto; grid-template-rows: auto 1fr; gap: 6px 14px; align-items: center;
+        color: var(--rcs-text); font: 14px var(--rcs-font); text-align: left; cursor: pointer; border: 2px solid var(--tier); background: color-mix(in srgb, var(--tier) 12%, var(--rcs-surface)); }
+      .trunk .spd { font: 700 20px var(--rcs-mono); color: var(--tier); min-width: 64px; }
+      .trunk .ends { font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .trunk .ends span { font: 14px var(--rcs-mono); color: var(--rcs-muted); font-weight: 400; }
+      .trunk .pct { font: 700 22px var(--rcs-mono); display: flex; align-items: center; gap: 8px; }
+      .trunk .flows { grid-column: 1 / -1; display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; align-items: center; font: 13px var(--rcs-mono); color: var(--rcs-muted); }
+      .bar { height: 10px; border-radius: 5px; background: color-mix(in srgb, var(--rcs-text) 10%, transparent); overflow: hidden; }
+      .bar b { display: block; height: 100%; border-radius: 5px; background: var(--tier); }
+      .trunk.hot { border: 3px solid var(--alert); box-shadow: 0 0 0 1px var(--alert) inset; }
+      .trunk.hot .pct { color: var(--alert); }
+      .trunk.hot .bar b { background: var(--alert); }
+      .tri { width: 26px; height: 26px; flex: none; }
       /* adopt */
       .scroll { flex: 1; min-height: 0; overflow-y: auto; }
       .list { border: 1px solid var(--rcs-border); border-radius: 12px; background: var(--rcs-surface); }
@@ -101,7 +118,10 @@
         <span class="device" id="device"></span>
         <rcs-status id="status" connection="disconnected"></rcs-status>
         <div class="grow"></div>
+        <div class="legend" id="legend" hidden></div>
         <div class="tabs" id="swTabs" role="group" aria-label="Switch"></div>
+        <rcs-button id="toTrunks" size="small">Trunks</rcs-button>
+        <rcs-button id="toPorts" size="small">Ports</rcs-button>
         <rcs-button id="toSetup" size="small">Setup</rcs-button>
       </header>
 
@@ -150,6 +170,10 @@
         <p class="note" id="swHint"></p>
       </section>
 
+      <section id="view-trunks" hidden style="flex-direction: column; gap: 10px">
+        <div class="trunks" id="trunks"></div>
+      </section>
+
       <section id="view-adopt" class="scroll" hidden>
         <p class="note" style="margin-bottom: 10px" id="adoptNote"></p>
         <div class="list" id="adoptList"></div>
@@ -191,7 +215,11 @@
 
     <script type="module">
       const $ = (id) => document.getElementById(id);
-      const TITLES = { overview: 'Network overview', switches: 'Switch ports', adopt: 'Waiting for adoption', wifi: 'Wi-Fi networks', setup: 'Setup' };
+      const TITLES = { overview: 'Network overview', switches: 'Switch ports', adopt: 'Waiting for adoption', wifi: 'Wi-Fi networks', setup: 'Setup', trunks: 'Trunks' };
+      // Link speeds: up to 100M gold, 1G green, 2.5G light blue, 10G blue, above that purple.
+      const TIERS = [['100M', '#E5B53A', '≤100M'], ['1G', '#3DD68C', '1G'], ['2.5G', '#7DD3FC', '2.5G'], ['10G', '#2F6BFF', '10G'], ['25G', '#A970FF', '25G']];
+      const TIER_COLOR = Object.fromEntries(TIERS.map(([k, c]) => [k, c]));
+      const ALERT = '#F2555A';
       const VLAN_COLORS = ['#8C95A1', '#5B8DEF', '#B57BFF', '#3DD68C', '#FF8A4C', '#4CC9F0', '#FF6B9A', '#D4D46A', '#A0E26B', '#E879F9', '#F87171', '#60A5FA'];
       let s = null;
       let onYes = null;
@@ -457,6 +485,77 @@
         $('info').replaceChildren(...rows.flatMap(([k, v]) => [el('dt', {}, k), el('dd', {}, v)]));
       }
 
+      const rate = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(2)} Gb/s` : `${(b / 1e6).toFixed(b >= 1e8 ? 0 : 1)} Mb/s`);
+      const linkSpeed = (m) => (!m ? '?' : m >= 1000 ? `${+(m / 1000).toFixed(1)}G` : `${m}M`);
+      const NS = 'http://www.w3.org/2000/svg';
+      function triangle() {
+        const svg = document.createElementNS(NS, 'svg');
+        svg.setAttribute('viewBox', '0 0 24 24');
+        svg.setAttribute('class', 'tri');
+        svg.setAttribute('aria-hidden', 'true');
+        const path = document.createElementNS(NS, 'path');
+        path.setAttribute('d', 'M12 2.5 1.5 21h21L12 2.5Z');
+        path.setAttribute('fill', ALERT);
+        const bang = document.createElementNS(NS, 'path');
+        bang.setAttribute('d', 'M11 9h2v6h-2zM11 16.5h2v2h-2z');
+        bang.setAttribute('fill', '#fff');
+        svg.append(path, bang);
+        return svg;
+      }
+      function end(e) {
+        const d = el('span', {}, e.port ? ` · ${e.port}` : '');
+        return [e.device, d];
+      }
+
+      function drawTrunks() {
+        if (!s.trunks.length) {
+          $('trunks').replaceChildren(el('p', { class: 'note' }, 'No links between switches yet. A link shows here once a switch reports its uplink to another switch or the gateway.'));
+          return;
+        }
+        $('trunks').replaceChildren(
+          ...s.trunks.map((t) => {
+            const pct = Math.round(t.load * 100);
+            const b = el('button', { class: 'trunk' + (t.warn ? ' hot' : ''), 'aria-label': `${t.up.device} port ${t.up.port} to ${t.down.device} port ${t.down.port}, ${linkSpeed(t.speed)}, ${pct}% used${t.warn ? ', near capacity' : ''}` });
+            b.style.setProperty('--tier', TIER_COLOR[t.tier] ?? '#8C95A1');
+            b.style.setProperty('--alert', ALERT);
+            const ends = el('div', { class: 'ends' });
+            ends.append(...end(t.up), ' ⇄ ', ...end(t.down));
+            const p = el('div', { class: 'pct' });
+            if (t.warn) p.append(triangle());
+            p.append(`${pct}%`);
+            const flows = el('div', { class: 'flows' });
+            const cap = t.speed * 1e6 || 1;
+            for (const [arrow, v] of [['↓', t.toDown], ['↑', t.toUp]]) {
+              const bar = el('div', { class: 'bar' });
+              const fill = el('b');
+              fill.style.width = `${Math.min(100, (v / cap) * 100).toFixed(1)}%`;
+              bar.append(fill);
+              flows.append(el('span', {}, `${arrow} ${rate(v)}`), bar);
+            }
+            b.append(el('span', { class: 'spd' }, linkSpeed(t.speed)), ends, p, flows);
+            b.onclick = () => rcs.send({ type: 'show-trunk', id: t.id });
+            return b;
+          })
+        );
+      }
+
+      $('legend').replaceChildren(
+        ...TIERS.map(([, c, label]) => {
+          const sp = el('span', {}, label);
+          const sw = el('i');
+          sw.style.background = c;
+          sp.prepend(sw);
+          return sp;
+        }),
+        (() => {
+          const sp = el('span', {}, '≥90% used');
+          const sw = el('i');
+          sw.style.border = `2px solid ${ALERT}`;
+          sp.prepend(sw);
+          return sp;
+        })()
+      );
+
       function draw() {
         if (!s) return;
         const v = s.view;
@@ -466,24 +565,31 @@
         const site = s.sites.find((x) => x.name === s.config.site)?.desc ?? s.config.site;
         $('device').textContent = s.config.address ? `${s.config.address} · Site: ${site}` : '';
         $('swTabs').hidden = v !== 'switches' || !s.ready;
-        $('toSetup').hidden = v === 'setup' || v === 'switches';
+        $('toSetup').hidden = v === 'setup' || v === 'switches' || v === 'trunks';
+        $('toTrunks').hidden = v !== 'switches' || !s.ready;
+        $('toPorts').hidden = v !== 'trunks' || !s.ready;
+        $('legend').hidden = v !== 'trunks' || !s.ready;
         const live = s.ready || v === 'setup';
         $('offline').hidden = live;
         if (!live) {
           $('offlineText').textContent = s.statusText || 'Connecting…';
           $('offlineSetup').hidden = false;
         }
-        for (const x of ['overview', 'switches', 'adopt', 'wifi', 'setup']) $('view-' + x).hidden = !live || x !== v;
+        for (const x of ['overview', 'switches', 'adopt', 'wifi', 'setup', 'trunks']) $('view-' + x).hidden = !live || x !== v;
         $('view-switches').style.display = live && v === 'switches' ? 'flex' : 'none';
+        $('view-trunks').style.display = live && v === 'trunks' ? 'flex' : 'none';
         if (!live) return;
         if (v === 'overview') drawOverview();
         if (v === 'switches') drawSwitches();
         if (v === 'adopt') drawAdopt();
         if (v === 'wifi') drawWifi();
         if (v === 'setup') drawSetup();
+        if (v === 'trunks') drawTrunks();
       }
 
       $('toSetup').onclick = () => rcs.send({ type: 'view', view: 'setup' });
+      $('toTrunks').onclick = () => rcs.send({ type: 'view', view: 'trunks' });
+      $('toPorts').onclick = () => rcs.send({ type: 'view', view: 'switches' });
       $('offlineSetup').onclick = () => rcs.send({ type: 'view', view: 'setup' });
       $('reconnect').onclick = () => rcs.send({ type: 'reconnect' });
       $('trust').onclick = () =>

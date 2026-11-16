@@ -15,6 +15,7 @@
     "pages": [
       { "id": "overview", "label": "Overview" },
       { "id": "switches", "label": "Switches" },
+      { "id": "trunks", "label": "Trunks" },
       { "id": "adopt", "label": "Adopt" },
       { "id": "wifi", "label": "Wi-Fi" },
       { "id": "setup", "label": "Setup" }

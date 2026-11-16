@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { UnifiClient } from '../src/client.js';
 import mod, { KEY, type Config, type State } from '../src/index.js';
 import { MockUnifi, type MockOptions } from '../src/mock.js';
-import { nativeNetwork, parseHealth, parseNetworks, wifiQrText } from '../src/model.js';
+import { findTrunks, nativeNetwork, parseDevices, parseHealth, parseNetworks, speedTier, wifiQrText } from '../src/model.js';
 import { qrRows } from '../src/qr.js';
 
 let mock: MockUnifi | null = null;
@@ -84,6 +84,34 @@ describe('model', () => {
       { subsystem: 'lan', num_user: 2 }
     ]);
     expect(h).toMatchObject({ wanStatus: 'online', down: 1e6, up: 2e6, wireless: 3, wired: 2 });
+  });
+
+  it('bands link speeds for colour', () => {
+    expect([0, 10, 100, 1000, 2500, 5000, 10000, 25000, 40000].map(speedTier)).toEqual(['', '100M', '100M', '1G', '2.5G', '10G', '10G', '25G', '25G']);
+  });
+
+  it('finds trunks from switch uplinks, with traffic and a warning at 90%', () => {
+    const sw = (mac: string, name: string, uplink: object | undefined, ports: object[]) => ({ _id: name, mac, name, type: 'usw', state: 1, adopted: true, uplink, port_table: ports });
+    const port = (idx: number, speed: number, rxMb = 0, txMb = 0, extra = {}) => ({ port_idx: idx, up: true, speed, 'rx_bytes-r': rxMb * 125_000, 'tx_bytes-r': txMb * 125_000, ...extra });
+    const raw = [
+      { _id: 'gw', mac: 'aa:00', name: 'Gateway', type: 'udm', state: 1, adopted: true, port_table: [port(1, 2500)] },
+      sw('aa:01', 'Core', { uplink_mac: 'aa:00', uplink_remote_port: 1, port_idx: 24, type: 'wire' }, [port(23, 10000), port(24, 2500, 400, 100, { is_uplink: true })]),
+      sw('aa:02', 'Stage', { uplink_mac: 'AA:01', uplink_remote_port: 23, port_idx: 24, type: 'wire' }, [port(24, 1000, 950, 20)]),
+      sw('aa:03', 'Mini', { uplink_mac: 'aa:02', uplink_remote_port: 5, speed: 100, 'rx_bytes-r': 1_000_000, 'tx_bytes-r': 0, type: 'wire' }, []),
+      { _id: 'ap', mac: 'aa:10', name: 'AP', type: 'uap', state: 1, adopted: true, uplink: { uplink_mac: 'aa:01', uplink_remote_port: 3, type: 'wire' } },
+      sw('aa:04', 'Mesh', { uplink_mac: 'aa:01', type: 'wireless' }, [])
+    ];
+    const trunks = findTrunks(parseDevices(raw, [], [], []));
+    expect(trunks.map((t) => `${t.up.device}:${t.up.port}>${t.down.device}:${t.down.port} ${t.tier} ${t.warn}`)).toEqual([
+      'Core:23>Stage:24 1G true',
+      'Gateway:1>Core:24 2.5G false',
+      'Stage:5>Mini:0 100M false'
+    ]);
+    const core = trunks.find((t) => t.down.device === 'Core')!;
+    expect(core).toMatchObject({ speed: 2500, toDown: 400e6, toUp: 100e6 });
+    expect(core.load).toBeCloseTo(0.16);
+    expect(trunks.find((t) => t.down.device === 'Stage')!.load).toBeCloseTo(0.95);
+    expect(trunks.find((t) => t.down.device === 'Mini')).toMatchObject({ speed: 100, toDown: 8e6 });
   });
 
   it('escapes Wi-Fi QR text and makes a QR code', () => {
@@ -197,6 +225,26 @@ describe('module', () => {
     expect(sim!.keys[KEY.ADOPT]?.sublabel).toBe('2 WAITING');
   });
 
+  it('shows trunks on the keys, coloured by speed and red when busy, and opens one on a press', async () => {
+    const port = await startMock();
+    await startModule(port);
+    await until(() => last()?.trunks?.length === 3);
+    expect(sim!.keys[KEY.TRUNKS]).toMatchObject({ label: 'TRUNKS', sublabel: '⚠ 1 BUSY' });
+    await sim!.press(KEY.TRUNKS);
+    await until(() => last()?.view === 'trunks');
+    const faces = [5, 6, 7].map((i) => sim!.keys[i]!);
+    expect(faces.map((f) => f.sublabel)).toEqual(['SW-Core 24', 'SW-FOH 24', 'SW-Stage 24']);
+    expect(faces[0]).toMatchObject({ label: '2.5G 17%', background: '#7DD3FC' });
+    expect(faces[1]).toMatchObject({ background: '#D7263D' });
+    expect(faces[1]!.label).toMatch(/^⚠ 1G 9\d%$/);
+    expect(faces[2]).toMatchObject({ background: '#2F6BFF' });
+    await sim!.press(7);
+    await until(() => last()?.view === 'switches');
+    expect(last()?.switch?.name).toBe('SW-Stage');
+    expect(last()?.selPort).toBe(24);
+    expect(changes()).toEqual([]);
+  });
+
   it('will not change ports or adopt with Allow changes off', async () => {
     const port = await startMock();
     await startModule(port);
@@ -215,7 +263,7 @@ describe('module', () => {
     await startModule(port, { config: { allowChanges: true }, state: { sw: '70:a7:41:00:00:03', selPort: 1, ssid: '' } });
     await sim!.tapStrip('switches');
     // Networks sorted by VLAN: Default 1, Mgmt 10, Video 20, Audio 30, Lighting 40, LED 50, Guest 60, Comms 70.
-    expect(sim!.keys[2]).toMatchObject({ label: 'VIDEO', sublabel: 'VLAN 20', background: '#F5A524' });
+    expect(sim!.keys[2]).toMatchObject({ label: 'VIDEO', sublabel: 'VLAN 20', background: '#006FFF' });
     await sim!.press(3); // Audio for port 1
     await sim!.press(KEY.NEXT);
     await sim!.press(5); // LED for port 2

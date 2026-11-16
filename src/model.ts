@@ -19,6 +19,9 @@ export interface Port {
   uplink: boolean;
   /** The wired client the controller sees on this port, if any. */
   client: string;
+  /** Traffic in bits per second, as the switch reports it: received and sent on this port. */
+  rx: number;
+  tx: number;
 }
 
 export interface Device {
@@ -35,6 +38,51 @@ export interface Device {
   uptime: number;
   version: string;
   ports: Port[];
+  /** The wired link up to another device, as the controller reports it. */
+  uplink: Uplink | null;
+}
+
+export interface Uplink {
+  /** MAC of the device this one plugs into. */
+  mac: string;
+  /** That device's port, or 0 when it is not known. */
+  remotePort: number;
+  /** This device's own port, or 0 when it is not known. */
+  localPort: number;
+  /** Mb/s. */
+  speed: number;
+  /** Bits per second, received and sent by this device on the link. */
+  rx: number;
+  tx: number;
+}
+
+/** Link speed bands, coloured the same on the panel, the web view and the keys. */
+export type SpeedTier = '100M' | '1G' | '2.5G' | '10G' | '25G' | '';
+
+export interface TrunkEnd {
+  mac: string;
+  device: string;
+  /** 0 when the controller does not say. */
+  port: number;
+}
+
+/** A wired link between two network devices (switches and gateways). */
+export interface Trunk {
+  id: string;
+  /** The upstream end, closer to the gateway. */
+  up: TrunkEnd;
+  /** The downstream end: the device whose uplink this is. */
+  down: TrunkEnd;
+  /** Link speed in Mb/s, 0 when not known. */
+  speed: number;
+  tier: SpeedTier;
+  /** Bits per second flowing towards the downstream device, and back up. */
+  toDown: number;
+  toUp: number;
+  /** The busier direction as a share of the link speed, 0 to 1 (or more, if the counters overshoot). */
+  load: number;
+  /** Within 90% of the link speed. */
+  warn: boolean;
 }
 
 export interface Network {
@@ -77,9 +125,10 @@ export interface NetworkView {
   wlans: Wlan[];
   /** WAN bits per second, oldest first: [down, up]. */
   history: [number, number][];
+  trunks: Trunk[];
 }
 
-export const emptyView = (): NetworkView => ({ health: null, devices: [], networks: [], wlans: [], history: [] });
+export const emptyView = (): NetworkView => ({ health: null, devices: [], networks: [], wlans: [], history: [], trunks: [] });
 
 type Raw = Record<string, any>;
 
@@ -170,7 +219,9 @@ export function parseDevices(raw: Raw[], portconfRaw: Raw[], nets: Network[], cl
             networkId: n.networkId,
             profile: n.profile,
             uplink: !!p.is_uplink,
-            client: onPort.get(`${d.mac}:${p.port_idx}`) ?? ''
+            client: onPort.get(`${d.mac}:${p.port_idx}`) ?? '',
+            rx: num(p['rx_bytes-r']) * 8,
+            tx: num(p['tx_bytes-r']) * 8
           };
         })
         .sort((a: Port, b: Port) => a.idx - b.idx);
@@ -188,10 +239,70 @@ export function parseDevices(raw: Raw[], portconfRaw: Raw[], nets: Network[], cl
         clients: num(d.num_sta ?? d['user-num_sta']),
         uptime: num(d.uptime),
         version: str(d.version, 32),
-        ports: kind === 'switch' || kind === 'gateway' ? ports : []
+        ports: kind === 'switch' || kind === 'gateway' ? ports : [],
+        uplink: parseUplink(d.uplink, ports)
       };
     })
     .sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || a.name.localeCompare(b.name));
+}
+
+function parseUplink(u: Raw | undefined, ports: Port[]): Uplink | null {
+  if (!u || typeof u !== 'object' || typeof u.uplink_mac !== 'string' || !u.uplink_mac || (u.type && u.type !== 'wire')) return null;
+  const localPort = Number.isInteger(u.port_idx) ? u.port_idx : ports.find((p) => p.uplink)?.idx ?? 0;
+  return {
+    mac: u.uplink_mac,
+    remotePort: Number.isInteger(u.uplink_remote_port) ? u.uplink_remote_port : 0,
+    localPort,
+    speed: num(u.speed),
+    rx: num(u['rx_bytes-r']) * 8,
+    tx: num(u['tx_bytes-r']) * 8
+  };
+}
+
+/** 100 Mb/s and below, up to 1G, up to 2.5G, up to 10G, and above. */
+export function speedTier(mbps: number): SpeedTier {
+  if (!(mbps > 0)) return '';
+  if (mbps <= 100) return '100M';
+  if (mbps <= 1000) return '1G';
+  if (mbps <= 2500) return '2.5G';
+  if (mbps <= 10000) return '10G';
+  return '25G';
+}
+
+export const TRUNK_WARN = 0.9;
+
+/**
+ * The links between switches and gateways, from each one's uplink. Access points and clients are
+ * not trunks here. The traffic is what the downstream device counts on its uplink port.
+ */
+export function findTrunks(devices: Device[]): Trunk[] {
+  const net = devices.filter((d) => d.adopted && (d.kind === 'switch' || d.kind === 'gateway'));
+  const byMac = new Map(net.map((d) => [d.mac.toLowerCase(), d]));
+  const out: Trunk[] = [];
+  for (const d of net) {
+    const u = d.uplink;
+    if (!u || d.state === 'offline') continue;
+    const parent = byMac.get(u.mac.toLowerCase());
+    const local = d.ports.find((p) => p.idx === u.localPort);
+    const remote = parent?.ports.find((p) => p.idx === u.remotePort);
+    const speed = local?.speed || u.speed || remote?.speed || 0;
+    // Downstream's port: receives what flows down, sends what flows up.
+    const toDown = local ? local.rx : remote ? remote.tx : u.rx;
+    const toUp = local ? local.tx : remote ? remote.rx : u.tx;
+    const load = speed ? Math.max(toDown, toUp) / (speed * 1e6) : 0;
+    out.push({
+      id: `${d.mac}:${u.localPort}`,
+      up: { mac: u.mac, device: parent?.name ?? u.mac, port: u.remotePort },
+      down: { mac: d.mac, device: d.name, port: u.localPort },
+      speed,
+      tier: speedTier(speed),
+      toDown,
+      toUp,
+      load,
+      warn: load >= TRUNK_WARN
+    });
+  }
+  return out.sort((a, b) => a.up.device.localeCompare(b.up.device) || a.up.port - b.up.port || a.down.device.localeCompare(b.down.device));
 }
 
 function bands(w: Raw): string {
