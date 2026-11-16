@@ -90,12 +90,12 @@ describe('model', () => {
     expect([0, 10, 100, 1000, 2500, 5000, 10000, 25000, 40000].map(speedTier)).toEqual(['', '100M', '100M', '1G', '2.5G', '10G', '10G', '25G', '25G']);
   });
 
-  it('finds trunks from switch uplinks, with traffic and a warning at 90%', () => {
+  it('finds trunks from switch and access point uplinks, with traffic and a warning at 90%', () => {
     const sw = (mac: string, name: string, uplink: object | undefined, ports: object[]) => ({ _id: name, mac, name, type: 'usw', state: 1, adopted: true, uplink, port_table: ports });
     const port = (idx: number, speed: number, rxMb = 0, txMb = 0, extra = {}) => ({ port_idx: idx, up: true, speed, 'rx_bytes-r': rxMb * 125_000, 'tx_bytes-r': txMb * 125_000, ...extra });
     const raw = [
       { _id: 'gw', mac: 'aa:00', name: 'Gateway', type: 'udm', state: 1, adopted: true, port_table: [port(1, 2500)] },
-      sw('aa:01', 'Core', { uplink_mac: 'aa:00', uplink_remote_port: 1, port_idx: 24, type: 'wire' }, [port(23, 10000), port(24, 2500, 400, 100, { is_uplink: true })]),
+      sw('aa:01', 'Core', { uplink_mac: 'aa:00', uplink_remote_port: 1, port_idx: 24, type: 'wire' }, [port(3, 2500, 30, 200), port(23, 10000), port(24, 2500, 400, 100, { is_uplink: true })]),
       sw('aa:02', 'Stage', { uplink_mac: 'AA:01', uplink_remote_port: 23, port_idx: 24, type: 'wire' }, [port(24, 1000, 950, 20)]),
       sw('aa:03', 'Mini', { uplink_mac: 'aa:02', uplink_remote_port: 5, speed: 100, 'rx_bytes-r': 1_000_000, 'tx_bytes-r': 0, type: 'wire' }, []),
       { _id: 'ap', mac: 'aa:10', name: 'AP', type: 'uap', state: 1, adopted: true, uplink: { uplink_mac: 'aa:01', uplink_remote_port: 3, type: 'wire' } },
@@ -103,6 +103,7 @@ describe('model', () => {
     ];
     const trunks = findTrunks(parseDevices(raw, [], [], []));
     expect(trunks.map((t) => `${t.up.device}:${t.up.port}>${t.down.device}:${t.down.port} ${t.tier} ${t.warn}`)).toEqual([
+      'Core:3>AP:0 2.5G false',
       'Core:23>Stage:24 1G true',
       'Gateway:1>Core:24 2.5G false',
       'Stage:5>Mini:0 100M false'
@@ -110,6 +111,8 @@ describe('model', () => {
     const core = trunks.find((t) => t.down.device === 'Core')!;
     expect(core).toMatchObject({ speed: 2500, toDown: 400e6, toUp: 100e6 });
     expect(core.load).toBeCloseTo(0.16);
+    // An access point reports no ports: its traffic is the switch port's, turned around.
+    expect(trunks.find((t) => t.down.device === 'AP')).toMatchObject({ speed: 2500, toDown: 200e6, toUp: 30e6, down: { kind: 'ap' } });
     expect(trunks.find((t) => t.down.device === 'Stage')!.load).toBeCloseTo(0.95);
     expect(trunks.find((t) => t.down.device === 'Mini')).toMatchObject({ speed: 100, toDown: 8e6 });
   });
@@ -237,20 +240,28 @@ describe('module', () => {
   it('shows trunks on the keys, coloured by speed and red when busy, and opens one on a press', async () => {
     const port = await startMock();
     await startModule(port);
-    await until(() => last()?.trunks?.length === 3);
+    await until(() => last()?.trunks?.length === 4); // AP Lobby is offline, so not listed
     expect(sim!.keys[KEY.TRUNKS]).toMatchObject({ label: 'TRUNKS', sublabel: '⚠ 1 BUSY' });
     // Five strip icons where the controller takes them; four (no Trunks) on older ones.
     const ids = sim!.strip.map((i) => i.id);
     expect(ids).toEqual(last()?.trunksIcon ? ['overview', 'switches', 'trunks', 'adopt', 'wifi'] : ['overview', 'switches', 'adopt', 'wifi']);
     await sim!.press(KEY.TRUNKS);
     await until(() => last()?.view === 'trunks');
-    const faces = [5, 6, 7].map((i) => sim!.keys[i]!);
-    expect(faces.map((f) => f.sublabel)).toEqual(['SW-Core 24', 'SW-FOH 24', 'SW-Stage 24']);
+    const faces = [5, 6, 7, 8].map((i) => sim!.keys[i]!);
+    expect(faces.map((f) => f.sublabel)).toEqual(['SW-Core 24', 'AP Stage', 'SW-FOH 24', 'SW-Stage 24']);
+    expect(faces[1]).toMatchObject({ background: '#3DD68C' });
     expect(faces[0]).toMatchObject({ label: '2.5G 17%', background: '#7DD3FC' });
-    expect(faces[1]).toMatchObject({ background: '#D7263D' });
-    expect(faces[1]!.label).toMatch(/^⚠ 1G 9\d%$/);
-    expect(faces[2]).toMatchObject({ background: '#2F6BFF' });
-    await sim!.press(7);
+    expect(faces[2]).toMatchObject({ background: '#D7263D' });
+    expect(faces[2]!.label).toMatch(/^⚠ 1G 9\d%$/);
+    expect(faces[3]).toMatchObject({ background: '#2F6BFF' });
+    await sim!.press(6); // AP Stage: opens the core switch at the AP's port
+    await until(() => last()?.view === 'switches');
+    expect(last()?.switch?.name).toBe('SW-Core');
+    expect(last()?.selPort).toBe(5);
+    await sim!.press(KEY.BACK); // STATS, back out of Switches
+    await sim!.press(KEY.TRUNKS);
+    await until(() => last()?.view === 'trunks');
+    await sim!.press(8);
     await until(() => last()?.view === 'switches');
     expect(last()?.switch?.name).toBe('SW-Stage');
     expect(last()?.selPort).toBe(24);

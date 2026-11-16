@@ -105,8 +105,10 @@ export class MockUnifi {
       switchDevice('core', 'SW-Core', CORE_MAC, '10.0.10.2', 41 * day),
       switchDevice('stage', 'SW-Stage', '70:a7:41:00:00:03', '10.0.10.3', 3 * day),
       switchDevice('foh', 'SW-FOH', '70:a7:41:00:00:04', '10.0.10.4', 3 * day),
-      { _id: 'ap1', mac: '70:a7:41:00:00:21', name: 'AP Stage', model_name: 'U7 Pro', type: 'uap', state: 1, adopted: true, ip: '10.0.10.20', num_sta: 96, uptime: 3 * day, version: '8.0.17' },
-      { _id: 'ap2', mac: '70:a7:41:00:00:22', name: 'AP Lobby', model_name: 'U7 Pro', type: 'uap', state: 0, adopted: true, ip: '10.0.10.21', num_sta: 0, uptime: 0, version: '8.0.17' },
+      { _id: 'ap1', mac: '70:a7:41:00:00:21', name: 'AP Stage', model_name: 'U7 Pro', type: 'uap', state: 1, adopted: true, ip: '10.0.10.20', num_sta: 96, uptime: 3 * day, version: '8.0.17',
+        uplink: { uplink_mac: CORE_MAC, uplink_remote_port: 5, speed: 1000, full_duplex: true, type: 'wire' } },
+      { _id: 'ap2', mac: '70:a7:41:00:00:22', name: 'AP Lobby', model_name: 'U7 Pro', type: 'uap', state: 0, adopted: true, ip: '10.0.10.21', num_sta: 0, uptime: 0, version: '8.0.17',
+        uplink: { uplink_mac: '70:a7:41:00:00:04', uplink_remote_port: 9, speed: 1000, full_duplex: true, type: 'wire' } },
       { _id: 'p1', mac: 'f4:e2:c6:1a:09:3b', model_name: 'Switch Flex Mini', type: 'usw', state: 1, adopted: false, ip: '10.0.10.61', version: '7.1.26', port_table: [] },
       { _id: 'p2', mac: 'f4:e2:c6:7d:41:e0', model_name: 'U7 Lite', type: 'uap', state: 1, adopted: false, ip: '10.0.10.62', version: '8.0.17' }
     ];
@@ -244,7 +246,7 @@ export class MockUnifi {
   }
 
   /** Mb/s flowing down and up each switch's uplink. FOH's 1G link runs above 90%. */
-  trunkLoad: Record<string, [number, number]> = { core: [420, 190], stage: [3200, 1100], foh: [945, 310] };
+  trunkLoad: Record<string, [number, number]> = { core: [420, 190], stage: [3200, 1100], foh: [945, 310], ap1: [180, 60] };
 
   private trunkTraffic(): void {
     const jitter = (v: number) => Math.max(0, v * (1 + (Math.random() - 0.5) * 0.02)) * 125_000;
@@ -253,8 +255,9 @@ export class MockUnifi {
       if (!d) continue;
       const rx = jitter(down);
       const tx = jitter(up);
-      const local = d.port_table.find((p: Raw) => p.port_idx === d.uplink.port_idx);
+      const local = d.port_table?.find((p: Raw) => p.port_idx === d.uplink.port_idx);
       if (local) Object.assign(local, { 'rx_bytes-r': rx, 'tx_bytes-r': tx });
+      else Object.assign(d.uplink, { 'rx_bytes-r': rx, 'tx_bytes-r': tx }); // access points report it here
       const parent = this.devices.find((x) => x.mac === d.uplink.uplink_mac);
       const remote = parent?.port_table?.find((p: Raw) => p.port_idx === d.uplink.uplink_remote_port);
       if (remote) Object.assign(remote, { 'rx_bytes-r': tx, 'tx_bytes-r': rx });
