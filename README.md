@@ -10,7 +10,7 @@ Machine, Cloud Gateway, Cloud Key, UniFi OS Server) or a self-hosted UniFi Netwo
 - **Switches**: every port of a switch, coloured by its native VLAN, with link speed, PoE and the
   device on it. Tap a port, pick a VLAN on keys 1 to 10, then hold SAVE (key 15). The web view has
   a VLAN menu per port and an Apply button.
-- **Trunks**: every link between switches and to the gateway, from each switch's uplink, with both
+- **Trunks**: every wired link between switches, access points and the gateway, from each device's uplink, with both
   ends' ports, the link speed and the traffic each way. Links are coloured by speed: up to 100 Mb/s
   gold, 1G green, 2.5G light blue, 10G blue, above that purple. A link whose busier direction is at 90%
   of its speed or more is outlined in red with a warning triangle. On the panel it has its own strip icon

@@ -62,11 +62,12 @@ export type SpeedTier = '100M' | '1G' | '2.5G' | '10G' | '25G' | '';
 export interface TrunkEnd {
   mac: string;
   device: string;
+  kind: DeviceKind;
   /** 0 when the controller does not say. */
   port: number;
 }
 
-/** A wired link between two network devices (switches and gateways). */
+/** A wired link between two network devices: switches, gateways and access points. */
 export interface Trunk {
   id: string;
   /** The upstream end, closer to the gateway. */
@@ -272,11 +273,12 @@ export function speedTier(mbps: number): SpeedTier {
 export const TRUNK_WARN = 0.9;
 
 /**
- * The links between switches and gateways, from each one's uplink. Access points and clients are
- * not trunks here. The traffic is what the downstream device counts on its uplink port.
+ * The wired links between switches, gateways and access points, from each one's uplink. Clients
+ * and wireless (mesh) uplinks are not trunks here. The traffic is what the downstream device counts
+ * on its uplink port, or for an access point (which reports no ports), on the switch port it uses.
  */
 export function findTrunks(devices: Device[]): Trunk[] {
-  const net = devices.filter((d) => d.adopted && (d.kind === 'switch' || d.kind === 'gateway'));
+  const net = devices.filter((d) => d.adopted && d.kind !== 'other');
   const byMac = new Map(net.map((d) => [d.mac.toLowerCase(), d]));
   const out: Trunk[] = [];
   for (const d of net) {
@@ -292,8 +294,8 @@ export function findTrunks(devices: Device[]): Trunk[] {
     const load = speed ? Math.max(toDown, toUp) / (speed * 1e6) : 0;
     out.push({
       id: `${d.mac}:${u.localPort}`,
-      up: { mac: u.mac, device: parent?.name ?? u.mac, port: u.remotePort },
-      down: { mac: d.mac, device: d.name, port: u.localPort },
+      up: { mac: u.mac, device: parent?.name ?? u.mac, kind: parent?.kind ?? 'other', port: u.remotePort },
+      down: { mac: d.mac, device: d.name, kind: d.kind, port: u.localPort },
       speed,
       tier: speedTier(speed),
       toDown,

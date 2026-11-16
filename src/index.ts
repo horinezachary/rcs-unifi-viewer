@@ -342,13 +342,16 @@ async function setView(ctx: C, v: unknown): Promise<void> {
   await draw(ctx);
 }
 
-/** Opens the downstream switch of a trunk at its uplink port. */
+/** Opens a trunk's port: the downstream switch's uplink, or for an access point the switch port it is on. */
 async function showTrunk(ctx: C, id: unknown): Promise<void> {
   const t = view().trunks.find((x) => x.id === id);
-  const sw = t && switches().find((d) => d.mac === t.down.mac);
-  if (!rt || !t || !sw) return;
+  if (!rt || !t) return;
+  const down = switches().find((d) => d.mac === t.down.mac);
+  const sw = down ?? switches().find((d) => d.mac === t.up.mac);
+  if (!sw) return;
+  const port = down ? t.down.port : t.up.port;
   if (sw.mac !== currentSwitch(ctx)?.mac) rt.pending.clear();
-  await ctx.state.patch({ sw: sw.mac, selPort: t.down.port || sw.ports[0]?.idx || 1 });
+  await ctx.state.patch({ sw: sw.mac, selPort: port || sw.ports[0]?.idx || 1 });
   await setView(ctx, 'switches');
 }
 
