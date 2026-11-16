@@ -42,8 +42,20 @@ const STAGE_CLIENTS = ['Camera 1', 'Camera 2', 'Camera 3', 'PTZ 1', 'Stagebox A'
 
 const netByVlan = (v: number) => NETS.find((n) => n.vlan === v)!.id;
 
+const GW_MAC = '70:a7:41:00:00:01';
+const CORE_MAC = '70:a7:41:00:00:02';
+
+/** Who each switch plugs into: the core into the gateway, stage and FOH into the core. */
+const UPLINKS: Record<string, { mac: string; remote: number; speed: number }> = {
+  core: { mac: GW_MAC, remote: 1, speed: 2500 },
+  stage: { mac: CORE_MAC, remote: 23, speed: 10000 },
+  foh: { mac: CORE_MAC, remote: 22, speed: 1000 }
+};
+
 function switchDevice(id: string, name: string, mac: string, ip: string, uptime: number): Raw {
+  const up = UPLINKS[id]!;
   return {
+    uplink: { uplink_mac: up.mac, uplink_remote_port: up.remote, port_idx: 24, speed: up.speed, full_duplex: true, type: 'wire' },
     _id: id,
     mac,
     name,
@@ -61,7 +73,7 @@ function switchDevice(id: string, name: string, mac: string, ip: string, uptime:
       port_idx: i + 1,
       name: `Port ${i + 1}`,
       up: !(id === 'stage' && i >= 18 && i <= 20) && i % 11 !== 5,
-      speed: i >= 22 ? 10000 : 1000,
+      speed: i === 23 ? up.speed : i >= 22 ? 10000 : 1000,
       poe_enable: i < 16,
       poe_power: i < 16 ? '4.20' : '0.00',
       is_uplink: i === 23,
@@ -89,8 +101,8 @@ export class MockUnifi {
     this.site = opts.site ?? 'default';
     const day = 86400;
     this.devices = [
-      { _id: 'gw', mac: '70:a7:41:00:00:01', name: 'Gateway', model_name: 'Cloud Gateway Ultra', type: 'udm', state: 1, adopted: true, ip: '10.0.1.1', num_sta: 214, uptime: 41 * day, version: '4.1.13', port_table: [] },
-      switchDevice('core', 'SW-Core', '70:a7:41:00:00:02', '10.0.10.2', 41 * day),
+      { _id: 'gw', mac: GW_MAC, name: 'Gateway', model_name: 'Cloud Gateway Ultra', type: 'udm', state: 1, adopted: true, ip: '10.0.1.1', num_sta: 214, uptime: 41 * day, version: '4.1.13', port_table: [] },
+      switchDevice('core', 'SW-Core', CORE_MAC, '10.0.10.2', 41 * day),
       switchDevice('stage', 'SW-Stage', '70:a7:41:00:00:03', '10.0.10.3', 3 * day),
       switchDevice('foh', 'SW-FOH', '70:a7:41:00:00:04', '10.0.10.4', 3 * day),
       { _id: 'ap1', mac: '70:a7:41:00:00:21', name: 'AP Stage', model_name: 'U7 Pro', type: 'uap', state: 1, adopted: true, ip: '10.0.10.20', num_sta: 96, uptime: 3 * day, version: '8.0.17' },
@@ -179,6 +191,7 @@ export class MockUnifi {
         case 'stat/health':
           return ok(this.health());
         case 'stat/device':
+          this.trunkTraffic();
           return ok(this.devices);
         case 'stat/sta':
           return ok(this.clients());
@@ -228,6 +241,24 @@ export class MockUnifi {
       { subsystem: 'wlan', status: 'ok', num_user: 167, num_ap: 2 },
       { subsystem: 'lan', status: 'ok', num_user: 47, num_sw: 3 }
     ];
+  }
+
+  /** Mb/s flowing down and up each switch's uplink. FOH's 1G link runs above 90%. */
+  trunkLoad: Record<string, [number, number]> = { core: [420, 190], stage: [3200, 1100], foh: [945, 310] };
+
+  private trunkTraffic(): void {
+    const jitter = (v: number) => Math.max(0, v * (1 + (Math.random() - 0.5) * 0.02)) * 125_000;
+    for (const [id, [down, up]] of Object.entries(this.trunkLoad)) {
+      const d = this.devices.find((x) => x._id === id);
+      if (!d) continue;
+      const rx = jitter(down);
+      const tx = jitter(up);
+      const local = d.port_table.find((p: Raw) => p.port_idx === d.uplink.port_idx);
+      if (local) Object.assign(local, { 'rx_bytes-r': rx, 'tx_bytes-r': tx });
+      const parent = this.devices.find((x) => x.mac === d.uplink.uplink_mac);
+      const remote = parent?.port_table?.find((p: Raw) => p.port_idx === d.uplink.uplink_remote_port);
+      if (remote) Object.assign(remote, { 'rx_bytes-r': tx, 'tx_bytes-r': rx });
+    }
   }
 
   private clients(): Raw[] {

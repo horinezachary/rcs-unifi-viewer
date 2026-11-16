@@ -15,12 +15,14 @@
 //               11/12 previous/next port, 13 Overview, 14 revert, 15 hold to save
 //   Adopt       keys 6-14 waiting devices: hold to adopt
 //   Wi-Fi       keys 6-14 networks
+//   Trunks      keys 6-15 links between switches, coloured by speed; press one to see its port
+//   key 5       Trunks (in every view but Switches)
 
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { defineModule, type Ctx, type KeySetParams } from '@rcs/module-sdk';
 import { UnifiClient, type Credentials } from './client.js';
-import { emptyView, wifiQrText, type Device, type NetworkView } from './model.js';
+import { emptyView, wifiQrText, type Device, type NetworkView, type SpeedTier, type Trunk } from './model.js';
 import { qrRows } from './qr.js';
 
 export interface State {
@@ -43,18 +45,22 @@ export interface Config {
 }
 
 type C = Ctx<State, Config>;
-export type View = 'overview' | 'switches' | 'adopt' | 'wifi' | 'setup';
-const VIEWS: View[] = ['overview', 'switches', 'adopt', 'wifi', 'setup'];
+export type View = 'overview' | 'switches' | 'adopt' | 'wifi' | 'setup' | 'trunks';
+const VIEWS: View[] = ['overview', 'switches', 'adopt', 'wifi', 'setup', 'trunks'];
 const STRIP_VIEWS: View[] = ['overview', 'switches', 'adopt', 'wifi'];
 
-export const KEY = { OVERVIEW: 0, SWITCHES: 1, ADOPT: 2, WIFI: 3, MORE: 9, PREV: 10, NEXT: 11, BACK: 12, REVERT: 13, SAVE: 14 } as const;
+export const KEY = { OVERVIEW: 0, SWITCHES: 1, ADOPT: 2, WIFI: 3, TRUNKS: 4, MORE: 9, PREV: 10, NEXT: 11, BACK: 12, REVERT: 13, SAVE: 14 } as const;
 const HOLD_MS = 700;
 const MAX_DEVICES = 150;
 
-// Key colours: the system theme's, since keys have no CSS.
-const ACCENT = '#F5A524';
-const ON_ACCENT = '#16181C';
-const SELECTED = '#3A2E14';
+// Key colours, since keys have no CSS: the accent is the manifest theme's UniFi blue.
+const ACCENT = '#006FFF';
+const ON_ACCENT = '#FFFFFF';
+const SELECTED = '#13284A';
+/** Link speed colours, the same as the panel's and web view's. */
+export const TIER_COLORS: Record<Exclude<SpeedTier, ''>, string> = { '100M': '#E5B53A', '1G': '#3DD68C', '2.5G': '#7DD3FC', '10G': '#2F6BFF', '25G': '#A970FF' };
+const TIER_TEXT: Record<Exclude<SpeedTier, ''>, string> = { '100M': '#16181C', '1G': '#16181C', '2.5G': '#16181C', '10G': '#FFFFFF', '25G': '#FFFFFF' };
+const ALERT = '#D7263D';
 const DANGER = '#3A1E1C';
 const GOOD = '#173A2A';
 const BLANK: Omit<KeySetParams, 'index'> = {};
@@ -198,6 +204,7 @@ export function snapshot(ctx: C) {
     networks: v.networks,
     wlans: v.wlans,
     switch: switchView(sw),
+    trunks: v.trunks,
     selPort: ctx.state.value.selPort,
     pending: [...(rt?.pending ?? [])],
     ssid: ctx.state.value.ssid || v.wlans[0]?.id || ''
@@ -214,8 +221,25 @@ function navFaces(ctx: C): KeySetParams[] {
     nav(KEY.SWITCHES, 'PORTS', 'switches'),
     nav(KEY.ADOPT, 'ADOPT', 'adopt', waiting ? `${waiting} WAITING` : 'VIEW'),
     nav(KEY.WIFI, 'WI-FI', 'wifi'),
-    { index: 4, ...BLANK }
+    nav(KEY.TRUNKS, 'TRUNKS', 'trunks', trunkSummary())
   ];
+}
+
+function trunkSummary(): string {
+  const hot = view().trunks.filter((t) => t.warn).length;
+  return hot ? `⚠ ${hot} BUSY` : 'VIEW';
+}
+
+function speedLabel(mbps: number): string {
+  return !mbps ? '?' : mbps >= 1000 ? `${+(mbps / 1000).toFixed(1)}G` : `${mbps}M`;
+}
+
+function trunkFace(index: number, t: Trunk): KeySetParams {
+  const pct = `${Math.round(t.load * 100)}%`;
+  const where = short(`${t.down.device} ${t.down.port || ''}`.trim(), 12);
+  if (t.warn) return { index, label: `⚠ ${speedLabel(t.speed)} ${pct}`, sublabel: where, background: ALERT, color: '#FFFFFF' };
+  if (!t.tier) return { index, label: `${speedLabel(t.speed)} ${pct}`, sublabel: where };
+  return { index, label: `${speedLabel(t.speed)} ${pct}`, sublabel: where, background: TIER_COLORS[t.tier], color: TIER_TEXT[t.tier] };
 }
 
 function vlanPaging(n: number): { perPage: number; pages: number } {
@@ -281,6 +305,10 @@ function keyFaces(ctx: C): KeySetParams[] {
     const waiting = v.devices.filter((d) => !d.adopted).slice(0, 9);
     waiting.forEach((d, i) => faces.push({ index: 5 + i, label: short(d.model || 'DEVICE', 10), sublabel: c.allowChanges ? 'hold: adopt' : short(d.ip, 12) }));
     faces.push(...blanks(5 + waiting.length, 15));
+  } else if (cur === 'trunks') {
+    const list = v.trunks.slice(0, 10);
+    list.forEach((t, i) => faces.push(trunkFace(5 + i, t)));
+    faces.push(...blanks(5 + list.length, 15));
   } else if (cur === 'wifi') {
     const sel = snapshot(ctx).ssid;
     const list = v.wlans.slice(0, 9);
@@ -302,11 +330,23 @@ async function setView(ctx: C, v: unknown): Promise<void> {
   rt.view = v as View;
   // Keys and buttons change page too, so the strip highlight follows. Setup has no strip icon.
   // strip.select is newer than some SDKs and hosts this runs on: without it the highlight stays put.
-  if (STRIP_VIEWS.includes(rt.view)) {
+  // Trunks has no icon of its own (the strip holds four): it sits under Switches.
+  const icon = rt.view === 'trunks' ? 'switches' : rt.view;
+  if (STRIP_VIEWS.includes(icon)) {
     const strip = ctx.strip as typeof ctx.strip & { select?(id: string): Promise<void> };
-    void strip.select?.(rt.view).catch(() => {});
+    void strip.select?.(icon).catch(() => {});
   }
   await draw(ctx);
+}
+
+/** Opens the downstream switch of a trunk at its uplink port. */
+async function showTrunk(ctx: C, id: unknown): Promise<void> {
+  const t = view().trunks.find((x) => x.id === id);
+  const sw = t && switches().find((d) => d.mac === t.down.mac);
+  if (!rt || !t || !sw) return;
+  if (sw.mac !== currentSwitch(ctx)?.mac) rt.pending.clear();
+  await ctx.state.patch({ sw: sw.mac, selPort: t.down.port || sw.ports[0]?.idx || 1 });
+  await setView(ctx, 'switches');
 }
 
 async function selectSwitch(ctx: C, mac: unknown): Promise<void> {
@@ -513,7 +553,12 @@ export default defineModule<State, Config>({
       if (index === KEY.SAVE && rt.pending.size && cfg(ctx).allowChanges) return ctx.notify('Hold SAVE to apply the port changes');
       return;
     }
-    if (index <= KEY.WIFI) return setView(ctx, (['overview', 'switches', 'adopt', 'wifi'] as View[])[index]);
+    if (index <= KEY.TRUNKS) return setView(ctx, (['overview', 'switches', 'adopt', 'wifi', 'trunks'] as View[])[index]);
+    if (cur === 'trunks' && index >= 5) {
+      const t = view().trunks[index - 5];
+      if (t) await showTrunk(ctx, t.id);
+      return;
+    }
     if (cur === 'wifi' && index >= 5) {
       const w = view().wlans[index - 5];
       if (w) {
@@ -552,6 +597,8 @@ export default defineModule<State, Config>({
         return setView(ctx, m.view);
       case 'select-switch':
         return selectSwitch(ctx, m.mac);
+      case 'show-trunk':
+        return showTrunk(ctx, m.id);
       case 'select-port':
         return selectPort(ctx, m.idx);
       case 'pick-vlan':

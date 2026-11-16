@@ -9,11 +9,13 @@
   "ui": "ui",
   "configSchema": "config.schema.json",
   "defaults": "config.defaults.json",
+  "theme": { "accent": "#006FFF" },
   "web": {
     "ui": "web",
     "pages": [
       { "id": "overview", "label": "Overview" },
       { "id": "switches", "label": "Switches" },
+      { "id": "trunks", "label": "Trunks" },
       { "id": "adopt", "label": "Adopt" },
       { "id": "wifi", "label": "Wi-Fi" },
       { "id": "setup", "label": "Setup" }

@@ -10,6 +10,12 @@ Machine, Cloud Gateway, Cloud Key, UniFi OS Server) or a self-hosted UniFi Netwo
 - **Switches**: every port of a switch, coloured by its native VLAN, with link speed, PoE and the
   device on it. Tap a port, pick a VLAN on keys 1 to 10, then hold SAVE (key 15). The web view has
   a VLAN menu per port and an Apply button.
+- **Trunks**: every link between switches and to the gateway, from each switch's uplink, with both
+  ends' ports, the link speed and the traffic each way. Links are coloured by speed: up to 100 Mb/s
+  gold, 1G green, 2.5G light blue, 10G blue, above that purple. A link whose busier direction is at 90%
+  of its speed or more is outlined in red with a warning triangle. On the panel it is the Trunks button
+  in Switches and key 5; tap a link's key to open its port. Traffic refreshes with the device list,
+  every 15 s.
 - **Adopt**: devices waiting to be adopted. Hold the device's key, or tap Adopt and confirm.
 - **Wi-Fi**: each network's bands, security, VLAN and clients. Tap Show for
   the password and a QR code a phone can scan to join. The panel asks for the system PIN first when
