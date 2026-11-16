@@ -1,4 +1,5 @@
-import { readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { startTestModule, type TestModule } from '@rcs/module-sdk/testing';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -46,7 +47,7 @@ async function startModule(
   sim = await startTestModule(mod, { config: { ...BASE, port, ...extra.config }, state: extra.state, reason: extra.reason, verifyPin: extra.verifyPin });
   await sim.settle();
     await until(() => sim!.strip.length > 0);
-  // The test controller has no data folder files yet: give it credentials as the web view would.
+  // The test controller starts with no secrets: give it credentials as the web view would.
   await sim.sendUi({ type: 'credentials', ...(extra.creds ?? { apiKey: 'k3y' }) });
   await until(() => last()?.ready === true);
   await sim.settle();
@@ -214,7 +215,7 @@ describe('module', () => {
     expect(last().credentials).toEqual({ apiKey: true, username: '' });
   });
 
-  it('asks for credentials before connecting, and keeps them in the data folder', async () => {
+  it('asks for credentials before connecting, and keeps them as module secrets', async () => {
     const port = await startMock();
     sim = await startTestModule(mod, { config: { ...BASE, port } });
     await sim.settle();
@@ -223,7 +224,37 @@ describe('module', () => {
     expect(mock!.requests).toEqual([]);
     await sim.sendUi({ type: 'credentials', apiKey: 'k3y' });
     await until(() => last()?.credentials.apiKey === true); // drawn after the file is written
-    expect(JSON.parse(await readFile(path.join(sim.dataDir, 'credentials.json'), 'utf8'))).toEqual({ apiKey: 'k3y' });
+    expect(sim.secrets).toEqual({ apiKey: 'k3y' });
+    expect(JSON.stringify(sim.state) + JSON.stringify(sim.config)).not.toContain('k3y');
+  });
+
+  it('connects with the secrets it starts with, as after a restore', async () => {
+    const port = await startMock();
+    sim = await startTestModule(mod, { config: { ...BASE, port }, secrets: { apiKey: 'k3y' }, reason: 'restore' });
+    await until(() => last()?.ready === true);
+    expect(last()?.credentials).toMatchObject({ apiKey: true });
+  });
+
+  it('keeps credentials.json on a controller without secrets', async () => {
+    const port = await startMock();
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), 'unifi-old-host-'));
+    await writeFile(path.join(dataDir, 'credentials.json'), JSON.stringify({ apiKey: 'k3y' }));
+    sim = await startTestModule(mod, { config: { ...BASE, port }, dataDir, noSecrets: true });
+    await until(() => last()?.ready === true);
+    await sim.sendUi({ type: 'credentials', apiKey: 'n3w' });
+    await until(() => sim!.logs.some((l) => l.text === 'Set a new API key')); // after the file is written
+    expect(JSON.parse(await readFile(path.join(dataDir, 'credentials.json'), 'utf8'))).toEqual({ apiKey: 'n3w' });
+    expect(sim.errors).toEqual([]);
+  });
+
+  it('moves credentials.json from an older version into the secrets', async () => {
+    const port = await startMock();
+    const dataDir = await mkdtemp(path.join(os.tmpdir(), 'unifi-legacy-'));
+    await writeFile(path.join(dataDir, 'credentials.json'), JSON.stringify({ apiKey: 'k3y' }));
+    sim = await startTestModule(mod, { config: { ...BASE, port }, dataDir });
+    await until(() => last()?.ready === true);
+    expect(sim.secrets).toEqual({ apiKey: 'k3y' });
+    await expect(readFile(path.join(dataDir, 'credentials.json'))).rejects.toThrow();
   });
 
   it('shows the overview on the keys', async () => {
