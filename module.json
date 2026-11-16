@@ -5,6 +5,7 @@
   "description": "Network health, switch ports, adoption and Wi-Fi from a UniFi controller",
   "icon": "assets/icon.svg",
   "apiVersion": 1,
+  "host": { "min": "0.14.0" },
   "entry": "dist/index.js",
   "ui": "ui",
   "configSchema": "config.schema.json",

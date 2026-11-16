@@ -4,7 +4,7 @@
 // The controller is the source of truth. Health, devices, ports, networks and Wi-Fi are read from it
 // on every poll and kept only in memory. State holds what the panel is looking at (switch, port,
 // Wi-Fi network); config holds the controller's address, site, pinned certificate and the Allow changes switch;
-// the API key or login lives in the module's data folder, so it is never in a save. Starting,
+// the API key or login is a module secret, kept apart from both and carried in named saves. Starting,
 // restoring and reconnecting only read. A VLAN change or an adoption goes out only when the operator
 // asks, and only with Allow changes on in Setup.
 //
@@ -17,7 +17,7 @@
 //   Wi-Fi       keys 6-14 networks
 //   Trunks      keys 6-15 links between switches, coloured by speed; press one to see its port
 
-import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { defineModule, type Ctx, type KeySetParams } from '@rcs/module-sdk';
 import { UnifiClient, type Credentials } from './client.js';
@@ -114,26 +114,37 @@ function mbps(bits: number): string {
   return m >= 1000 ? (m / 1000).toFixed(2) + 'G' : m >= 100 ? m.toFixed(0) : m.toFixed(1);
 }
 
-// ---- credentials: in the data folder, never in state, config or a save --------------------------
+// ---- credentials: module secrets, never in state or config, never sent to a UI --------------------
+//
+// The controller keeps them apart from state and config, puts them in named saves (sealed with a
+// passphrase in a downloaded save) and clears them on Reset. Earlier versions kept them in
+// credentials.json in the data folder: that file is moved into the secrets on the first start.
 
-function credsFile(ctx: C): string {
-  return path.join(ctx.dataDir, 'credentials.json');
+const LEGACY_FILE = 'credentials.json';
+
+function credsOf(j: any): Credentials {
+  const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
+  return { apiKey: str(j?.apiKey), username: str(j?.username), password: str(j?.password) };
 }
 
 async function loadCreds(ctx: C): Promise<Credentials> {
+  const file = path.join(ctx.dataDir, LEGACY_FILE);
+  let legacy: Credentials | null = null;
   try {
-    const j = JSON.parse(await readFile(credsFile(ctx), 'utf8'));
-    return { apiKey: j.apiKey || undefined, username: j.username || undefined, password: j.password || undefined };
+    legacy = credsOf(JSON.parse(await readFile(file, 'utf8')));
   } catch {
-    return {};
+    // none, or unreadable
   }
+  if (legacy && hasCreds(legacy) && !hasCreds(credsOf(ctx.secrets.value))) {
+    await saveCreds(ctx, legacy);
+    await ctx.log('info', 'Moved the controller credentials into the module secrets');
+  }
+  if (legacy) await rm(file, { force: true });
+  return credsOf(ctx.secrets.value);
 }
 
 async function saveCreds(ctx: C, c: Credentials): Promise<void> {
-  const file = credsFile(ctx);
-  await mkdir(ctx.dataDir, { recursive: true });
-  await writeFile(file, JSON.stringify(c), { mode: 0o600 });
-  await chmod(file, 0o600).catch(() => {});
+  await ctx.secrets.set(Object.fromEntries(Object.entries(c).filter(([, v]) => v)));
 }
 
 /** For calls made from client events, which can land after the module stopped. */
