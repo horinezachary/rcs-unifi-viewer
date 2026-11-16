@@ -305,6 +305,52 @@ export function findTrunks(devices: Device[]): Trunk[] {
   return out.sort((a, b) => a.up.device.localeCompare(b.up.device) || a.up.port - b.up.port || a.down.device.localeCompare(b.down.device));
 }
 
+export interface TreeNode {
+  mac: string;
+  name: string;
+  /** 0 for the top (the gateway, or a switch whose uplink is not a known device). */
+  depth: number;
+  /** Horizontal position in leaf slots: 0 for the first leaf, fractional for parents. */
+  x: number;
+}
+
+export interface TrunkTree {
+  nodes: TreeNode[];
+  /** Leaf slots across, and levels down. */
+  width: number;
+  depth: number;
+}
+
+/** Lays the trunks out as a tree: each device under the one its uplink plugs into, by port. */
+export function trunkTree(trunks: Trunk[]): TrunkTree {
+  const names = new Map<string, string>();
+  const kids = new Map<string, Trunk[]>();
+  const isChild = new Set<string>();
+  for (const t of trunks) {
+    names.set(t.up.mac, t.up.device);
+    names.set(t.down.mac, t.down.device);
+    isChild.add(t.down.mac);
+    kids.set(t.up.mac, [...(kids.get(t.up.mac) ?? []), t]);
+  }
+  for (const list of kids.values()) list.sort((a, b) => a.up.port - b.up.port || a.down.device.localeCompare(b.down.device));
+  const roots = [...names.keys()].filter((m) => !isChild.has(m)).sort((a, b) => names.get(a)!.localeCompare(names.get(b)!));
+  const nodes: TreeNode[] = [];
+  const seen = new Set<string>();
+  let leaf = 0;
+  let maxDepth = 0;
+  const place = (mac: string, depth: number): number => {
+    seen.add(mac);
+    maxDepth = Math.max(maxDepth, depth);
+    const xs = (kids.get(mac) ?? []).filter((t) => !seen.has(t.down.mac)).map((t) => place(t.down.mac, depth + 1));
+    const x = xs.length ? (xs[0]! + xs.at(-1)!) / 2 : leaf++;
+    nodes.push({ mac, name: names.get(mac) ?? mac, depth, x });
+    return x;
+  };
+  for (const r of roots) if (!seen.has(r)) place(r, 0);
+  for (const m of names.keys()) if (!seen.has(m)) place(m, 0); // a loop of uplinks has no root
+  return { nodes, width: Math.max(leaf, 1), depth: maxDepth + 1 };
+}
+
 function bands(w: Raw): string {
   const list: string[] = Array.isArray(w.wlan_bands) ? w.wlan_bands : w.wlan_band === 'both' || !w.wlan_band ? ['2g', '5g'] : [w.wlan_band];
   const names: Record<string, string> = { '2g': '2.4', '5g': '5', '6g': '6' };
