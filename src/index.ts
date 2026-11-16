@@ -118,7 +118,7 @@ function mbps(bits: number): string {
 //
 // The controller keeps them apart from state and config, puts them in named saves (sealed with a
 // passphrase in a downloaded save) and clears them on Reset. Earlier versions, and controllers
-// before 0.14.0 that have no secrets, keep them in credentials.json in the data folder (mode 600,
+// before 0.15.0 that have no secrets, keep them in credentials.json in the data folder (mode 600,
 // not in saves). On a newer controller that file is moved into the secrets on the first start.
 
 const LEGACY_FILE = 'credentials.json';

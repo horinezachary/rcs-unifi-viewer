@@ -38,7 +38,7 @@ The API key or password is a module secret: the controller keeps it apart from s
 never sends it to a UI. Named saves include it, so restoring a save or loading it on another unit
 brings the login back. A downloaded save carries it only sealed with a passphrase you pick, or not at
 all. Module Reset or a factory reset removes it. Earlier versions kept it in `credentials.json` in the
-data folder; the first start on controller 0.14.0 or later moves it into the secrets. An older
+data folder; the first start on controller 0.15.0 or later moves it into the secrets. An older
 controller has no secrets, so there the module keeps using that file and saves leave the login out.
 
 ## Certificates
