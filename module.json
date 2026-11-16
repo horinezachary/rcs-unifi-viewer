@@ -9,6 +9,7 @@
   "ui": "ui",
   "configSchema": "config.schema.json",
   "defaults": "config.defaults.json",
+  "theme": { "accent": "#006FFF" },
   "web": {
     "ui": "web",
     "pages": [
