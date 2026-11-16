@@ -13,8 +13,9 @@ Machine, Cloud Gateway, Cloud Key, UniFi OS Server) or a self-hosted UniFi Netwo
 - **Trunks**: every link between switches and to the gateway, from each switch's uplink, with both
   ends' ports, the link speed and the traffic each way. Links are coloured by speed: up to 100 Mb/s
   gold, 1G green, 2.5G light blue, 10G blue, above that purple. A link whose busier direction is at 90%
-  of its speed or more is outlined in red with a warning triangle. On the panel it is the Trunks button
-  in Switches and key 5; tap a link's key to open its port. Traffic refreshes with the device list,
+  of its speed or more is outlined in red with a warning triangle. On the panel it has its own strip icon
+  (on controllers from v0.10; before that, the Trunks button in Switches) and key 3; tap a link's key
+  to open its port. Traffic refreshes with the device list,
   every 15 s.
 - **Adopt**: devices waiting to be adopted. Hold the device's key, or tap Adopt and confirm.
 - **Wi-Fi**: each network's bands, security, VLAN and clients. Tap Show for

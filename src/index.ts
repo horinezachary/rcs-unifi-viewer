@@ -9,14 +9,13 @@
 // asks, and only with Allow changes on in Setup.
 //
 // Stream Deck:
-//   keys 1-4    Overview, Switches, Adopt, Wi-Fi (in every view but Switches)
+//   keys 1-5    Overview, Switches, Trunks, Adopt, Wi-Fi (in every view but Switches)
 //   Overview    keys 6-10 WAN status, down, up, clients, devices
 //   Switches    keys 1-10 VLANs for the selected port (key 10 pages with more than 10 networks),
 //               11/12 previous/next port, 13 Overview, 14 revert, 15 hold to save
 //   Adopt       keys 6-14 waiting devices: hold to adopt
 //   Wi-Fi       keys 6-14 networks
 //   Trunks      keys 6-15 links between switches, coloured by speed; press one to see its port
-//   key 5       Trunks (in every view but Switches)
 
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -47,9 +46,9 @@ export interface Config {
 type C = Ctx<State, Config>;
 export type View = 'overview' | 'switches' | 'adopt' | 'wifi' | 'setup' | 'trunks';
 const VIEWS: View[] = ['overview', 'switches', 'adopt', 'wifi', 'setup', 'trunks'];
-const STRIP_VIEWS: View[] = ['overview', 'switches', 'adopt', 'wifi'];
+const STRIP_VIEWS: View[] = ['overview', 'switches', 'trunks', 'adopt', 'wifi'];
 
-export const KEY = { OVERVIEW: 0, SWITCHES: 1, ADOPT: 2, WIFI: 3, TRUNKS: 4, MORE: 9, PREV: 10, NEXT: 11, BACK: 12, REVERT: 13, SAVE: 14 } as const;
+export const KEY = { OVERVIEW: 0, SWITCHES: 1, TRUNKS: 2, ADOPT: 3, WIFI: 4, MORE: 9, PREV: 10, NEXT: 11, BACK: 12, REVERT: 13, SAVE: 14 } as const;
 const HOLD_MS = 700;
 const MAX_DEVICES = 150;
 
@@ -72,6 +71,8 @@ interface Runtime {
   pending: Map<number, string>;
   vlanPage: number;
   creds: Credentials;
+  /** The controller took a fifth strip icon, for Trunks. */
+  trunksIcon: boolean;
   ctx: C;
 }
 let rt: Runtime | null = null;
@@ -205,6 +206,7 @@ export function snapshot(ctx: C) {
     wlans: v.wlans,
     switch: switchView(sw),
     trunks: v.trunks,
+    trunksIcon: rt?.trunksIcon ?? false,
     selPort: ctx.state.value.selPort,
     pending: [...(rt?.pending ?? [])],
     ssid: ctx.state.value.ssid || v.wlans[0]?.id || ''
@@ -219,9 +221,9 @@ function navFaces(ctx: C): KeySetParams[] {
   return [
     nav(KEY.OVERVIEW, 'STATS', 'overview'),
     nav(KEY.SWITCHES, 'PORTS', 'switches'),
+    nav(KEY.TRUNKS, 'TRUNKS', 'trunks', trunkSummary()),
     nav(KEY.ADOPT, 'ADOPT', 'adopt', waiting ? `${waiting} WAITING` : 'VIEW'),
-    nav(KEY.WIFI, 'WI-FI', 'wifi'),
-    nav(KEY.TRUNKS, 'TRUNKS', 'trunks', trunkSummary())
+    nav(KEY.WIFI, 'WI-FI', 'wifi')
   ];
 }
 
@@ -330,8 +332,8 @@ async function setView(ctx: C, v: unknown): Promise<void> {
   rt.view = v as View;
   // Keys and buttons change page too, so the strip highlight follows. Setup has no strip icon.
   // strip.select is newer than some SDKs and hosts this runs on: without it the highlight stays put.
-  // Trunks has no icon of its own (the strip holds four): it sits under Switches.
-  const icon = rt.view === 'trunks' ? 'switches' : rt.view;
+  // On a controller whose strip holds only four icons, Trunks sits under Switches.
+  const icon = rt.view === 'trunks' && !rt.trunksIcon ? 'switches' : rt.view;
   if (STRIP_VIEWS.includes(icon)) {
     const strip = ctx.strip as typeof ctx.strip & { select?(id: string): Promise<void> };
     void strip.select?.(icon).catch(() => {});
@@ -508,16 +510,22 @@ export default defineModule<State, Config>({
   async start(ctx) {
     rt?.client?.stop();
     const none: Credentials = {};
-    const r: Runtime = (rt = { client: null, view: 'overview', pending: new Map(), vlanPage: 0, creds: none, ctx });
+    const r: Runtime = (rt = { client: null, view: 'overview', pending: new Map(), vlanPage: 0, creds: none, trunksIcon: false, ctx });
     const saved = await loadCreds(ctx);
     if (r.creds === none) r.creds = saved; // unless a new sign-in came in meanwhile
     await ctx.state.init({ sw: '', selPort: 1, ssid: '' });
-    await ctx.strip.set([
+    const icons = [
       { id: 'overview', label: 'Overview', icon: 'assets/overview.svg' },
       { id: 'switches', label: 'Switches', icon: 'assets/switches.svg' },
+      { id: 'trunks', label: 'Trunks', icon: 'assets/trunks.svg' },
       { id: 'adopt', label: 'Adopt', icon: 'assets/adopt.svg' },
       { id: 'wifi', label: 'Wi-Fi', icon: 'assets/wifi.svg' }
-    ]);
+    ];
+    // Controllers before v0.10 take four icons: there Trunks opens from the Switches header and key 3.
+    r.trunksIcon = await ctx.strip.set(icons).then(
+      () => true,
+      () => ctx.strip.set(icons.filter((i) => i.id !== 'trunks')).then(() => false)
+    );
     connect(ctx); // reads only: no changes on start, whatever the reason
     await draw(ctx);
   },
@@ -553,7 +561,7 @@ export default defineModule<State, Config>({
       if (index === KEY.SAVE && rt.pending.size && cfg(ctx).allowChanges) return ctx.notify('Hold SAVE to apply the port changes');
       return;
     }
-    if (index <= KEY.TRUNKS) return setView(ctx, (['overview', 'switches', 'adopt', 'wifi', 'trunks'] as View[])[index]);
+    if (index <= KEY.WIFI) return setView(ctx, (['overview', 'switches', 'trunks', 'adopt', 'wifi'] as View[])[index]);
     if (cur === 'trunks' && index >= 5) {
       const t = view().trunks[index - 5];
       if (t) await showTrunk(ctx, t.id);

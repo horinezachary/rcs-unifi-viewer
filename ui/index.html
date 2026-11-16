@@ -566,8 +566,9 @@
         $('device').textContent = s.config.address ? `${s.config.address} · Site: ${site}` : '';
         $('swTabs').hidden = v !== 'switches' || !s.ready;
         $('toSetup').hidden = v === 'setup' || v === 'switches' || v === 'trunks';
-        $('toTrunks').hidden = v !== 'switches' || !s.ready;
-        $('toPorts').hidden = v !== 'trunks' || !s.ready;
+        // With a Trunks strip icon these header buttons are not needed (older controllers take four icons).
+        $('toTrunks').hidden = v !== 'switches' || !s.ready || s.trunksIcon;
+        $('toPorts').hidden = v !== 'trunks' || !s.ready || s.trunksIcon;
         $('legend').hidden = v !== 'trunks' || !s.ready;
         const live = s.ready || v === 'setup';
         $('offline').hidden = live;
