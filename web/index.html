@@ -44,6 +44,25 @@
       td select { width: 100%; min-width: 160px; }
       .link { display: inline-block; width: 8px; height: 8px; border-radius: 4px; background: var(--rcs-muted); margin-right: 6px; }
       .link.up { background: var(--rcs-ok); }
+      tr.sel td { box-shadow: inset 0 1px 0 var(--rcs-accent), inset 0 -1px 0 var(--rcs-accent); }
+      tr.sel td:first-child { box-shadow: inset 3px 0 0 var(--rcs-accent), inset 0 1px 0 var(--rcs-accent), inset 0 -1px 0 var(--rcs-accent); }
+
+      /* The switch's front panel, like the panel's Ports view: odd ports on top, even below, in groups of 12. */
+      .face { display: flex; flex-wrap: wrap; gap: 10px 22px; }
+      .face .grp { flex: 1 1 340px; min-width: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 6px; }
+      .fport { height: 64px; border-radius: 9px; padding: 3px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: var(--rcs-text);
+        font: 12px var(--rcs-font); cursor: pointer; border: 1px solid var(--rcs-border); background: var(--rcs-surface); min-width: 0; box-sizing: border-box; }
+      .fport .n { font: 700 14px var(--rcs-mono); display: flex; align-items: center; gap: 4px; }
+      .fport .dot { width: 7px; height: 7px; border-radius: 4px; background: var(--rcs-muted); flex: none; }
+      .fport .dot.up { background: var(--rcs-ok); }
+      .fport .vl { font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .fport .sub { font-size: 11px; color: var(--rcs-muted); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .fport.down { opacity: 0.6; }
+      .fport.pending { border: 2px dashed var(--rcs-accent); }
+      .fport.sel { border: 3px solid var(--rcs-accent); opacity: 1; }
+      .fport:focus-visible { outline: 2px solid var(--rcs-accent); outline-offset: 2px; }
+      @media (max-width: 520px) { .fport { height: 54px; } .fport .sub { display: none; } }
+      .vlegend { display: flex; gap: 6px 16px; flex-wrap: wrap; font-size: 13px; color: var(--rcs-muted); }
 
       .tiers { display: flex; gap: 18px; flex-wrap: wrap; font: 600 14px var(--rcs-mono); color: var(--rcs-muted); }
       .tiers i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
@@ -136,6 +155,11 @@
         <rcs-button id="revert" size="small" hidden>Revert</rcs-button>
         <rcs-button id="apply" size="small" variant="primary" hidden>Apply</rcs-button>
       </div>
+      <div class="card" id="faceCard" hidden>
+        <div class="row"><strong id="faceName"></strong><span class="note" id="faceInfo"></span></div>
+        <div class="face" id="face" role="group" aria-label="Ports"></div>
+        <div class="vlegend" id="faceLegend"></div>
+      </div>
       <div class="card scrollx">
         <table>
           <thead><tr><th>Port</th><th>Name</th><th>Link</th><th>Connected</th><th>PoE</th><th>Native VLAN</th></tr></thead>
@@ -224,6 +248,7 @@
       let sw = null; // this browser's switch, from get-switch
       let swMac = ''; // the switch this browser looks at
       const picks = new Map(); // this browser's unsaved port picks: idx -> network id
+      let selPort = 0; // the port picked on this browser's front panel view
       const revealed = new Map(); // wlan id -> { password, qr }
       let onYes = null;
 
@@ -337,6 +362,7 @@
             const b = el('button', { 'aria-pressed': String(d.mac === swMac) }, d.name);
             const go = () => {
               picks.clear();
+              selPort = 0;
               swMac = d.mac;
               sw = null;
               rcs.send({ type: 'get-switch', mac: d.mac });
@@ -358,12 +384,13 @@
             : 'Pick a native VLAN for any port, then press Apply. A port profile on a changed port is replaced.';
         $('revert').hidden = $('apply').hidden = !picks.size;
         $('apply').textContent = `Apply ${picks.size}`;
-        if (!sw || sw.mac !== swMac) return $('ports').replaceChildren();
+        if (!sw || sw.mac !== swMac) return ($('faceCard').hidden = true), $('ports').replaceChildren();
+        drawFace();
         if (busy('ports')) return;
         $('ports').replaceChildren(
           ...sw.ports.map((p) => {
             const shown = picks.get(p.idx) ?? p.networkId;
-            const tr = el('tr', { class: picks.has(p.idx) ? 'pending' : '' });
+            const tr = el('tr', { id: `row-${p.idx}`, class: [picks.has(p.idx) ? 'pending' : '', p.idx === selPort ? 'sel' : ''].join(' ').trim() });
             const link = el('td', { class: 'mono' });
             link.append(el('span', { class: 'link' + (p.up ? ' up' : '') }), p.up ? speed(p.speed) : 'down');
             const vlan = el('td');
@@ -393,6 +420,74 @@
             return tr;
           })
         );
+      }
+
+      // The switch drawn like its front panel, as on the rack's Ports view. Picking a port marks it
+      // and its table row, and brings the row into view.
+      function drawFace() {
+        const had = document.activeElement?.closest?.('#face') ? document.activeElement.dataset.idx : null;
+        $('faceCard').hidden = false;
+        $('faceName').textContent = sw.name;
+        const up = sw.ports.filter((p) => p.up).length;
+        const poe = sw.ports.reduce((w, p) => w + (p.poe ? p.poeWatts : 0), 0);
+        $('faceInfo').textContent = [`${up} of ${sw.ports.length} ports up`, poe ? `PoE ${poe.toFixed(1)} W` : ''].filter(Boolean).join(' · ');
+        const ports = [...sw.ports].sort((a, b) => a.idx - b.idx);
+        // Odd ports on the top row, even ports below them; small switches (8 ports or fewer) have one row.
+        // Groups of 12 ports wrap onto new lines on narrow screens instead of scrolling.
+        const rows = ports.length > 8 ? 2 : 1;
+        const per = rows === 2 ? 12 : 8;
+        const groups = [];
+        for (let i = 0; i < ports.length; i += per) groups.push(ports.slice(i, i + per));
+        $('face').replaceChildren(
+          ...groups.map((g) => {
+            const grp = el('div', { class: 'grp' });
+            grp.style.gridTemplateRows = `repeat(${rows}, auto)`;
+            if (rows === 1) grp.style.flexBasis = '100%';
+            grp.append(...g.map(facePort));
+            return grp;
+          })
+        );
+        if (had) $('face').querySelector(`[data-idx="${had}"]`)?.focus({ preventScroll: true }); // keep keyboard focus across redraws
+        const used = [...new Set(ports.map((p) => picks.get(p.idx) ?? p.networkId))];
+        $('faceLegend').replaceChildren(
+          ...s.networks
+            .filter((n) => used.includes(n.id))
+            .map((n) => {
+              const it = el('span');
+              const dot = el('span', { class: 'vdot' });
+              dot.style.background = netColor(n.id);
+              it.append(dot, `${n.name} (${n.vlan})`);
+              return it;
+            })
+        );
+      }
+      function facePort(p) {
+        const shown = picks.get(p.idx) ?? p.networkId;
+        const c = netColor(shown);
+        const pend = picks.has(p.idx);
+        const sub = pend ? 'unsaved' : p.up ? speed(p.speed) : 'no link';
+        const b = el('button', {
+          class: 'fport' + (p.up ? '' : ' down') + (pend ? ' pending' : '') + (p.idx === selPort ? ' sel' : ''),
+          'aria-label': `Port ${p.idx}, ${netLabel(shown)}, ${sub}`,
+          'aria-pressed': String(p.idx === selPort),
+          'data-idx': p.idx,
+          title: [`Port ${p.idx}${p.name && p.name !== `Port ${p.idx}` ? ` · ${p.name}` : ''}`, netLabel(shown), sub, p.client, p.poe && p.poeWatts ? `PoE ${p.poeWatts.toFixed(1)} W` : '', p.uplink ? 'uplink' : '']
+            .filter(Boolean)
+            .join('\n')
+        });
+        b.style.background = `color-mix(in srgb, ${c} ${p.up ? 20 : 8}%, var(--rcs-surface))`;
+        if (!pend && p.idx !== selPort) b.style.borderColor = `color-mix(in srgb, ${c} 55%, transparent)`;
+        const n = el('span', { class: 'n' });
+        n.append(el('span', { class: 'dot' + (p.up ? ' up' : '') }), String(p.idx));
+        b.append(n, el('span', { class: 'vl' }, s.networks.find((x) => x.id === shown)?.name ?? '?'), el('span', { class: 'sub' }, sub));
+        b.onclick = () => {
+          selPort = selPort === p.idx ? 0 : p.idx;
+          drawSwitches();
+          if (!selPort) return;
+          const row = $(`row-${p.idx}`);
+          row?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        };
+        return b;
       }
       $('revert').onclick = () => (picks.clear(), drawSwitches());
       $('apply').onclick = () => {
