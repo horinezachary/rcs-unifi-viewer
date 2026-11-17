@@ -77,6 +77,7 @@ function switchDevice(id: string, name: string, mac: string, ip: string, uptime:
       poe_enable: i < 16,
       poe_power: i < 16 ? '4.20' : '0.00',
       is_uplink: i === 23,
+      media: i >= 22 ? 'SFP+' : 'GE', // the two uplink ports are SFP+ cages
       native_networkconf_id: netByVlan(vlan)
     }))
   };

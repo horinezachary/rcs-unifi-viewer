@@ -17,6 +17,9 @@ export interface Port {
   /** A port profile assigned on the controller; changing the VLAN here replaces it. */
   profile: string;
   uplink: boolean;
+  /** The port's connector as the switch reports it (port_table media): 'GE', '2P5GE', '10GE', 'SFP', 'SFP+',
+   *  'SFP28', 'QSFP28', ... Empty when the controller does not say. */
+  media: string;
   /** The wired client the controller sees on this port, if any. */
   client: string;
   /** Traffic in bits per second, as the switch reports it: received and sent on this port. */
@@ -220,6 +223,7 @@ export function parseDevices(raw: Raw[], portconfRaw: Raw[], nets: Network[], cl
             networkId: n.networkId,
             profile: n.profile,
             uplink: !!p.is_uplink,
+            media: str(p.media, 12).toUpperCase(),
             client: onPort.get(`${d.mac}:${p.port_idx}`) ?? '',
             rx: num(p['rx_bytes-r']) * 8,
             tx: num(p['tx_bytes-r']) * 8
