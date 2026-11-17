@@ -47,12 +47,17 @@
       tr.sel td { box-shadow: inset 0 1px 0 var(--rcs-accent), inset 0 -1px 0 var(--rcs-accent); }
       tr.sel td:first-child { box-shadow: inset 3px 0 0 var(--rcs-accent), inset 0 1px 0 var(--rcs-accent), inset 0 -1px 0 var(--rcs-accent); }
 
-      /* The switch's front panel, like the panel's Ports view: odd ports on top, even below, in groups of 12. */
-      .face { display: flex; flex-wrap: wrap; gap: 10px 22px; }
-      .face .grp { flex: 1 1 340px; min-width: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 6px; }
+      /* The switch's front panel, like the panel's Ports view: odd ports on top, even below, copper ports in
+         blocks and SFP cages on their own. Every port is the same size (--pw, set from the widest block so
+         a block never needs to scroll on a phone). */
+      .face { display: flex; flex-wrap: wrap; gap: 10px 22px; container-type: inline-size; }
+      .face .grp { display: grid; grid-auto-flow: column; grid-auto-columns: var(--pw); gap: 6px; }
       .fport { height: 64px; border-radius: 9px; padding: 3px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: var(--rcs-text);
         font: 12px var(--rcs-font); cursor: pointer; border: 1px solid var(--rcs-border); background: var(--rcs-surface); min-width: 0; box-sizing: border-box; }
-      .fport .n { font: 700 14px var(--rcs-mono); display: flex; align-items: center; gap: 4px; }
+      .fport .n { font: 700 14px var(--rcs-mono); display: flex; align-items: center; gap: 4px; max-width: 100%; }
+      .fport.sfp { border-radius: 3px; }
+      .fport .m { font: 700 9px var(--rcs-mono); letter-spacing: 0.02em; padding: 1px 3px; border-radius: 3px; color: var(--rcs-bg); background: var(--rcs-muted); }
+      .vlegend .sfp-key { display: inline-block; width: 12px; height: 9px; border: 1.5px solid var(--rcs-muted); border-radius: 2px; margin-right: 7px; vertical-align: -1px; }
       .fport .dot { width: 7px; height: 7px; border-radius: 4px; background: var(--rcs-muted); flex: none; }
       .fport .dot.up { background: var(--rcs-ok); }
       .fport .vl { font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -61,7 +66,8 @@
       .fport.pending { border: 2px dashed var(--rcs-accent); }
       .fport.sel { border: 3px solid var(--rcs-accent); opacity: 1; }
       .fport:focus-visible { outline: 2px solid var(--rcs-accent); outline-offset: 2px; }
-      @media (max-width: 520px) { .fport { height: 54px; } .fport .sub { display: none; } }
+      /* Narrow: drop the speed line; an SFP port shows its cage type under the number in place of the VLAN name (the colour still tells it). */
+      @container (max-width: 520px) { .fport { height: 54px; } .fport .sub { display: none; } .fport.sfp .n { flex-wrap: wrap; justify-content: center; row-gap: 3px; } .fport.sfp .vl { display: none; } }
       .vlegend { display: flex; gap: 6px 16px; flex-wrap: wrap; font-size: 13px; color: var(--rcs-muted); }
 
       .tiers { display: flex; gap: 18px; flex-wrap: wrap; font: 600 14px var(--rcs-mono); color: var(--rcs-muted); }
@@ -411,7 +417,7 @@
             }
             tr.append(
               el('td', { class: 'mono' }, String(p.idx)),
-              el('td', {}, p.name + (p.uplink ? ' · uplink' : '') + (p.profile ? ` · profile ${p.profile}` : '')),
+              el('td', {}, p.name + (isSfp(p) ? ` · ${p.media}` : '') + (p.uplink ? ' · uplink' : '') + (p.profile ? ` · profile ${p.profile}` : '')),
               link,
               el('td', {}, p.client || '–'),
               el('td', { class: 'mono' }, p.poe ? (p.poeWatts ? `${p.poeWatts.toFixed(1)} W` : 'on') : '–'),
@@ -431,25 +437,27 @@
         const up = sw.ports.filter((p) => p.up).length;
         const poe = sw.ports.reduce((w, p) => w + (p.poe ? p.poeWatts : 0), 0);
         $('faceInfo').textContent = [`${up} of ${sw.ports.length} ports up`, poe ? `PoE ${poe.toFixed(1)} W` : ''].filter(Boolean).join(' · ');
-        const ports = [...sw.ports].sort((a, b) => a.idx - b.idx);
-        // Odd ports on the top row, even ports below them; small switches (8 ports or fewer) have one row.
-        // Groups of 12 ports wrap onto new lines on narrow screens instead of scrolling.
-        const rows = ports.length > 8 ? 2 : 1;
-        const per = rows === 2 ? 12 : 8;
-        const groups = [];
-        for (let i = 0; i < ports.length; i += per) groups.push(ports.slice(i, i + per));
+        const groups = faceGroups(sw.ports);
         $('face').replaceChildren(
           ...groups.map((g) => {
             const grp = el('div', { class: 'grp' });
-            grp.style.gridTemplateRows = `repeat(${rows}, auto)`;
-            if (rows === 1) grp.style.flexBasis = '100%';
-            grp.append(...g.map(facePort));
+            grp.style.gridTemplateRows = `repeat(${g.rows}, auto)`;
+            grp.append(...g.ports.map(facePort));
             return grp;
           })
         );
+        // One size for every port, from the block with the most columns: 64 px, or less when that block
+        // would not fit across the card.
+        const cols = Math.max(1, ...groups.map((g) => Math.ceil(g.ports.length / g.rows)));
+        $('face').style.setProperty('--pw', `min(64px, calc((100cqw - ${(cols - 1) * 6}px) / ${cols}))`);
+        const ports = sw.ports;
         if (had) $('face').querySelector(`[data-idx="${had}"]`)?.focus({ preventScroll: true }); // keep keyboard focus across redraws
         const used = [...new Set(ports.map((p) => picks.get(p.idx) ?? p.networkId))];
+        const sfps = [...new Set(ports.filter(isSfp).map((p) => p.media))];
+        const sfpKey = el('span');
+        sfpKey.append(el('span', { class: 'sfp-key' }), `${sfps.join(' / ')} cage`);
         $('faceLegend').replaceChildren(
+          ...(sfps.length ? [sfpKey] : []),
           ...s.networks
             .filter((n) => used.includes(n.id))
             .map((n) => {
@@ -461,17 +469,39 @@
             })
         );
       }
+      const isSfp = (p) => /SFP/.test(p.media);
+      // The ports in blocks laid out like a UniFi switch's front: copper ports and SFP cages in separate
+      // blocks (by port_table media), odd ports on top and even below once there are more than 8 copper
+      // ports, long copper runs split into blocks of 12 like 24 and 48 port switches. Without media
+      // from the controller every port counts as copper.
+      function faceGroups(list) {
+        const ports = [...list].sort((a, b) => a.idx - b.idx);
+        const copper = ports.filter((p) => !isSfp(p)).length;
+        const rows = (copper || ports.length) > 8 ? 2 : 1;
+        const runs = [];
+        for (const p of ports) {
+          const last = runs.at(-1);
+          if (last && isSfp(last.at(-1)) === isSfp(p) && last.at(-1).idx === p.idx - 1) last.push(p);
+          else runs.push([p]);
+        }
+        const groups = [];
+        for (const run of runs) {
+          const per = !isSfp(run[0]) && rows === 2 && run.length > 16 ? 12 : run.length;
+          for (let i = 0; i < run.length; i += per) groups.push({ rows: Math.min(rows, run.slice(i, i + per).length), ports: run.slice(i, i + per) });
+        }
+        return groups;
+      }
       function facePort(p) {
         const shown = picks.get(p.idx) ?? p.networkId;
         const c = netColor(shown);
         const pend = picks.has(p.idx);
         const sub = pend ? 'unsaved' : p.up ? speed(p.speed) : 'no link';
         const b = el('button', {
-          class: 'fport' + (p.up ? '' : ' down') + (pend ? ' pending' : '') + (p.idx === selPort ? ' sel' : ''),
-          'aria-label': `Port ${p.idx}, ${netLabel(shown)}, ${sub}`,
+          class: 'fport' + (isSfp(p) ? ' sfp' : '') + (p.up ? '' : ' down') + (pend ? ' pending' : '') + (p.idx === selPort ? ' sel' : ''),
+          'aria-label': `Port ${p.idx}${isSfp(p) ? ` (${p.media})` : ''}, ${netLabel(shown)}, ${sub}`,
           'aria-pressed': String(p.idx === selPort),
           'data-idx': p.idx,
-          title: [`Port ${p.idx}${p.name && p.name !== `Port ${p.idx}` ? ` · ${p.name}` : ''}`, netLabel(shown), sub, p.client, p.poe && p.poeWatts ? `PoE ${p.poeWatts.toFixed(1)} W` : '', p.uplink ? 'uplink' : '']
+          title: [`Port ${p.idx}${isSfp(p) ? ` (${p.media})` : ''}${p.name && p.name !== `Port ${p.idx}` ? ` · ${p.name}` : ''}`, netLabel(shown), sub, p.client, p.poe && p.poeWatts ? `PoE ${p.poeWatts.toFixed(1)} W` : '', p.uplink ? 'uplink' : '']
             .filter(Boolean)
             .join('\n')
         });
@@ -479,6 +509,7 @@
         if (!pend && p.idx !== selPort) b.style.borderColor = `color-mix(in srgb, ${c} 55%, transparent)`;
         const n = el('span', { class: 'n' });
         n.append(el('span', { class: 'dot' + (p.up ? ' up' : '') }), String(p.idx));
+        if (isSfp(p)) n.append(el('span', { class: 'm' }, p.media));
         b.append(n, el('span', { class: 'vl' }, s.networks.find((x) => x.id === shown)?.name ?? '?'), el('span', { class: 'sub' }, sub));
         b.onclick = () => {
           selPort = selPort === p.idx ? 0 : p.idx;

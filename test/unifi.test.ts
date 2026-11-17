@@ -155,6 +155,7 @@ describe('client', () => {
     const stage = v.devices.find((d) => d.name === 'SW-Stage')!;
     expect(stage.ports).toHaveLength(24);
     expect(stage.ports[0]).toMatchObject({ idx: 1, client: 'Camera 1', networkId: 'net-video', up: true });
+    expect(stage.ports.map((p) => p.media).slice(21)).toEqual(['GE', 'SFP+', 'SFP+']); // port_table media, for the web front-panel view
     expect(v.wlans.find((w) => w.name === 'Crew')).toMatchObject({ security: 'WPA3', vlan: 10, clients: 38 });
     expect(v.wlans.find((w) => w.name === 'Ops 802.1X')!.qrType).toBe('');
     expect(mock!.changes).toEqual([]);
