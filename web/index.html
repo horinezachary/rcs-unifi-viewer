@@ -25,7 +25,7 @@
       td.mono { font-family: var(--rcs-mono); color: var(--rcs-muted); white-space: nowrap; }
       .scrollx { overflow-x: auto; }
 
-      .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+      .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 12px; }
       .stat .k { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; color: var(--rcs-muted); }
       .stat .v { font: 700 28px var(--rcs-mono); }
       .stat .s { font-size: 14px; color: var(--rcs-muted); }
@@ -74,11 +74,11 @@
       .tree .pt { fill: var(--rcs-muted); font: 12px var(--rcs-mono); }
       .tree .spd text { font: 700 13px var(--rcs-mono); }
 
-      .wifi { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; align-items: start; }
+      .wifi { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 16px; align-items: start; }
       .pw { font: 700 22px var(--rcs-mono); word-break: break-all; }
       .qr { background: #fff; border-radius: 12px; padding: 12px; width: 240px; }
 
-      .setup { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; align-items: start; }
+      .setup { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); gap: 24px; align-items: start; }
       dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 8px 18px; font-size: 15px; }
       dt { color: var(--rcs-muted); }
       dd { margin: 0; font-family: var(--rcs-mono); word-break: break-all; }
