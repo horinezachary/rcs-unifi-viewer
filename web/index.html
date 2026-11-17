@@ -52,7 +52,8 @@
       @media (max-width: 720px) { .trunks { grid-template-columns: minmax(0, 1fr); } }
       .trunk { border-radius: 14px; padding: 14px 18px; display: grid; grid-template-columns: auto 1fr auto; grid-template-areas: 'spd . pct' 'ends ends ends' 'flows flows flows'; gap: 6px 14px; align-items: center;
         border: 2px solid var(--tier); background: color-mix(in srgb, var(--tier) 10%, var(--rcs-surface)); min-width: 0; }
-      .trunk .spd { grid-area: spd; font: 700 22px var(--rcs-mono); color: var(--tier); }
+      .trunk .spd { grid-area: spd; font: 700 22px var(--rcs-mono); color: var(--tier); display: inline-flex; align-items: center; gap: 6px; }
+      .trunk .spd .wifi-ic { width: 0.95em; height: 0.95em; flex: none; }
       .trunk .ends { grid-area: ends; font-size: 16px; font-weight: 600; line-height: 1.5; min-width: 0; }
       .trunk .ends div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .trunk .ends span { font: 14px var(--rcs-mono); color: var(--rcs-muted); font-weight: 400; }
@@ -488,6 +489,18 @@
       const rate = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(2)} Gb/s` : `${(b / 1e6).toFixed(b >= 1e8 ? 0 : 1)} Mb/s`);
       const linkSpeed = (m) => (!m ? '?' : m >= 1000 ? `${+(m / 1000).toFixed(1)}G` : `${m}M`);
       const NS = 'http://www.w3.org/2000/svg';
+      function wifiIcon() {
+        const svg = svgEl('svg', { viewBox: '0 0 24 24', class: 'wifi-ic', 'aria-hidden': 'true' });
+        for (const d of ['M2 8.8a15 15 0 0 1 20 0', 'M5.5 12.4a10 10 0 0 1 13 0', 'M9 16a5 5 0 0 1 6 0'])
+          svg.append(svgEl('path', { d, fill: 'none', stroke: 'currentColor', 'stroke-width': '2.4', 'stroke-linecap': 'round' }));
+        svg.append(svgEl('circle', { cx: '12', cy: '19.6', r: '1.7', fill: 'currentColor' }));
+        return svg;
+      }
+      function speedLabel(t) {
+        const s = el('span', { class: 'spd' }, linkSpeed(t.speed));
+        if (t.up.kind === 'ap' || t.down.kind === 'ap') s.append(wifiIcon());
+        return s;
+      }
       function triangle() {
         const svg = document.createElementNS(NS, 'svg');
         svg.setAttribute('viewBox', '0 0 24 24');
@@ -601,7 +614,7 @@
               bar.append(fill);
               flows.append(el('span', {}, `${arrow} ${rate(v)}`), bar);
             }
-            card.append(el('span', { class: 'spd' }, linkSpeed(t.speed)), ends, p, flows);
+            card.append(speedLabel(t), ends, p, flows);
             return card;
           })
         );
