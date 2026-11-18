@@ -42,9 +42,16 @@ const BASE: Config = { address: '127.0.0.1', port: 0, site: 'default', fingerpri
 
 async function startModule(
   port: number,
-  extra: { config?: Partial<Config>; state?: State; creds?: object; reason?: 'boot' | 'restore' | 'user'; verifyPin?: (reason: string, clientId?: string) => boolean } = {},
+  extra: {
+    config?: Partial<Config>;
+    state?: State;
+    creds?: object;
+    reason?: 'boot' | 'restore' | 'user';
+    verifyPin?: (reason: string, clientId?: string) => boolean;
+    deck?: { columns: number; rows: number };
+  } = {},
 ) {
-  sim = await startTestModule(mod, { config: { ...BASE, port, ...extra.config }, state: extra.state, reason: extra.reason, verifyPin: extra.verifyPin });
+  sim = await startTestModule(mod, { config: { ...BASE, port, ...extra.config }, state: extra.state, reason: extra.reason, verifyPin: extra.verifyPin, deck: extra.deck });
   await sim.settle();
     await until(() => sim!.strip.length > 0);
   // The test controller starts with no secrets: give it credentials as the web view would.
@@ -357,6 +364,24 @@ describe('module', () => {
     await sim!.sendUi({ type: 'apply-ports', mac: '70:a7:41:00:00:04', changes: [{ idx: 3, networkId: 'net-video' }] }, 'web1');
     await until(() => changes().length === 1);
     expect(changes()[0]!.body.port_overrides).toEqual([{ port_idx: 3, name: 'Desk', poe_mode: 'off', native_networkconf_id: 'net-video' }]);
+  });
+
+  it('uses the bottom row of an XL for Switches, with VLANs on the rows above', async () => {
+    const port = await startMock();
+    await startModule(port, { config: { allowChanges: true }, state: { sw: '70:a7:41:00:00:03', selPort: 1, ssid: '' }, deck: { columns: 8, rows: 4 } });
+    await sim!.tapStrip('switches');
+    expect(sim!.keys).toHaveLength(32);
+    expect(sim!.keys[7]).toMatchObject({ label: 'COMMS', sublabel: 'VLAN 70' }); // all 8 networks on one row, no MORE
+    expect(sim!.keys[24]).toMatchObject({ label: '◀ PORT' });
+    await sim!.press(3);
+    expect(sim!.keys[30]).toMatchObject({ label: 'REVERT' });
+    expect(sim!.keys[31]).toMatchObject({ label: 'SAVE', sublabel: '1 · hold' });
+    await sim!.press(31, { holdMs: 750 });
+    await until(() => changes().length === 1);
+    await sim!.setDeck(5, 3);
+    expect(sim!.keys).toHaveLength(15);
+    expect(sim!.keys[KEY.PREV]).toMatchObject({ label: '◀ PORT' });
+    expect(sim!.keys[KEY.SAVE]).toMatchObject({ label: 'SAVE' });
   });
 
   it('adopts a waiting device on a held key', async () => {

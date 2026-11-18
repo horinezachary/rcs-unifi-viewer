@@ -20,7 +20,7 @@
       "assets",
       "vendor"
     ],
-    "sdkRef": "v0.15.0"
+    "sdkRef": "v0.21.0"
   },
   "peerDependencies": {
     "@rcs/module-sdk": ">=0.1.0"

@@ -22,6 +22,9 @@ Machine, Cloud Gateway, Cloud Key, UniFi OS Server) or a self-hosted UniFi Netwo
 - **Wi-Fi**: each network's bands, security, VLAN and clients. Tap Show for
   the password and a QR code a phone can scan to join. The panel asks for the system PIN first when
   one is set (a web browser signed in with the PIN is not asked again). It hides itself after a minute.
+- **Larger Stream Decks** (XL 8×4, Stream Deck + XL 9×4, on controllers from 0.21.0): the five view
+  keys stay on the top row and every other key lists devices, trunks or networks; in Switches the rows
+  above the bottom one are VLANs, and the bottom row ends with REVERT and SAVE.
 - **Setup**: controller address, port and site on the panel; the sign-in (an API key, or a local
   admin's username and password) in the web view.
 
