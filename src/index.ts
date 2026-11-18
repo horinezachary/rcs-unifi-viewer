@@ -16,6 +16,9 @@
 //   Adopt       keys 6-14 waiting devices: hold to adopt
 //   Wi-Fi       keys 6-14 networks
 //   Trunks      keys 6-15 links between switches, coloured by speed; press one to see its port
+// A larger deck (XL 8×4, Stream Deck + XL 9×4) keeps keys 1-5 and lists more devices, networks and trunks
+// on all the other keys; in Switches every row but the bottom one holds VLANs, and the bottom row is
+// ◀ PORT, PORT ▶, STATS, then REVERT and SAVE on its last two keys. See layout().
 
 import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -48,7 +51,39 @@ export type View = 'overview' | 'switches' | 'adopt' | 'wifi' | 'setup' | 'trunk
 const VIEWS: View[] = ['overview', 'switches', 'adopt', 'wifi', 'setup', 'trunks'];
 const STRIP_VIEWS: View[] = ['overview', 'switches', 'trunks', 'adopt', 'wifi'];
 
+/** The keys on a 15-key deck. layout() gives them for any deck. */
 export const KEY = { OVERVIEW: 0, SWITCHES: 1, TRUNKS: 2, ADOPT: 3, WIFI: 4, MORE: 9, PREV: 10, NEXT: 11, BACK: 12, REVERT: 13, SAVE: 14 } as const;
+
+export interface Grid {
+  columns: number;
+  rows: number;
+}
+
+/**
+ * The deck's grid. Read from ctx.host, not ctx.deck: a unit runs modules with its own controller's
+ * SDK, and one before 0.21.0 has no ctx.deck and reports no columns or rows (5 × 3).
+ */
+export function grid(ctx: { host: { deck: { columns?: number; rows?: number } } }): Grid {
+  return { columns: ctx.host?.deck?.columns ?? 5, rows: ctx.host?.deck?.rows ?? 3 };
+}
+
+/** Where everything goes on a deck. For 5 × 3 this is KEY. */
+export function layout(g: Grid) {
+  const keys = g.columns * g.rows;
+  const bottom = (g.rows - 1) * g.columns;
+  return {
+    keys,
+    /** Every key after the five view keys: stats, devices, networks, trunks. */
+    list: Array.from({ length: keys - 5 }, (_, i) => 5 + i),
+    /** Switches: VLAN keys, every row but the bottom one. The last one pages. */
+    vlans: Array.from({ length: bottom }, (_, i) => i),
+    prev: bottom,
+    next: bottom + 1,
+    back: bottom + 2,
+    revert: keys - 2,
+    save: keys - 1
+  };
+}
 const HOLD_MS = 700;
 const MAX_DEVICES = 150;
 
@@ -276,8 +311,8 @@ function trunkFace(index: number, t: Trunk): KeySetParams {
   return { index, label: `${speedLabel(t.speed)} ${pct}`, sublabel: where, background: TIER_COLORS[t.tier], color: TIER_TEXT[t.tier] };
 }
 
-function vlanPaging(n: number): { perPage: number; pages: number } {
-  const perPage = n > 10 ? 9 : 10;
+function vlanPaging(n: number, keys = 10): { perPage: number; pages: number } {
+  const perPage = n > keys ? keys - 1 : keys;
   return { perPage, pages: Math.max(1, Math.ceil(n / perPage)) };
 }
 
@@ -286,38 +321,39 @@ function keyFaces(ctx: C): KeySetParams[] {
   const c = cfg(ctx);
   const cur = rt?.view ?? 'overview';
   const live = ready();
+  const L = layout(grid(ctx));
   const blanks = (from: number, to: number) => Array.from({ length: to - from }, (_, i) => ({ index: from + i }));
 
   if (!live) {
-    return [...navFaces(ctx), ...blanks(5, 7), { index: 7, label: 'OFFLINE', sublabel: short(c.address || 'no address', 12), background: DANGER }, ...blanks(8, 15)];
+    return [...navFaces(ctx), ...blanks(5, 7), { index: 7, label: 'OFFLINE', sublabel: short(c.address || 'no address', 12), background: DANGER }, ...blanks(8, L.keys)];
   }
 
   if (cur === 'switches') {
     const sw = currentSwitch(ctx);
     const port = sw?.ports.find((p) => p.idx === ctx.state.value.selPort) ?? sw?.ports[0];
     const target = port ? rt!.pending.get(port.idx) ?? port.networkId : '';
-    const { perPage, pages } = vlanPaging(v.networks.length);
+    const { perPage, pages } = vlanPaging(v.networks.length, L.vlans.length);
     const page = Math.min(rt!.vlanPage, pages - 1);
-    const faces: KeySetParams[] = [];
-    for (let k = 0; k < 10; k++) {
+    const faces: KeySetParams[] = blanks(0, L.keys);
+    for (const k of L.vlans) {
       const net = v.networks[page * perPage + k];
-      if (k === KEY.MORE && pages > 1) faces.push({ index: k, label: 'MORE ▶', sublabel: `page ${page + 1}/${pages}` });
+      if (k === L.vlans.length - 1 && pages > 1) faces.push({ index: k, label: 'MORE ▶', sublabel: `page ${page + 1}/${pages}` });
       else if (k < perPage && net && port) {
         const on = net.id === target;
         faces.push({ index: k, label: short(net.name.toUpperCase(), 10), sublabel: `VLAN ${net.vlan}`, ...(on ? { background: ACCENT, color: ON_ACCENT } : {}) });
       } else faces.push({ index: k });
     }
     const n = rt!.pending.size;
-    faces.push({ index: KEY.PREV, label: '◀ PORT', sublabel: port ? `port ${port.idx}` : '' });
-    faces.push({ index: KEY.NEXT, label: 'PORT ▶', sublabel: short(sw?.name, 12) });
-    faces.push({ index: KEY.BACK, label: 'STATS', sublabel: 'back' });
-    faces.push(n ? { index: KEY.REVERT, label: 'REVERT', sublabel: `${n} UNSAVED` } : { index: KEY.REVERT });
+    faces.push({ index: L.prev, label: '◀ PORT', sublabel: port ? `port ${port.idx}` : '' });
+    faces.push({ index: L.next, label: 'PORT ▶', sublabel: short(sw?.name, 12) });
+    faces.push({ index: L.back, label: 'STATS', sublabel: 'back' });
+    faces.push(n ? { index: L.revert, label: 'REVERT', sublabel: `${n} UNSAVED` } : { index: L.revert });
     faces.push(
       !c.allowChanges
-        ? { index: KEY.SAVE, label: 'VIEW ONLY', sublabel: 'see Setup' }
+        ? { index: L.save, label: 'VIEW ONLY', sublabel: 'see Setup' }
         : n
-          ? { index: KEY.SAVE, label: 'SAVE', sublabel: `${n} · hold`, background: ACCENT, color: ON_ACCENT }
-          : { index: KEY.SAVE, label: 'SAVE', sublabel: 'nothing' }
+          ? { index: L.save, label: 'SAVE', sublabel: `${n} · hold`, background: ACCENT, color: ON_ACCENT }
+          : { index: L.save, label: 'SAVE', sublabel: 'nothing' }
     );
     return faces;
   }
@@ -333,21 +369,22 @@ function keyFaces(ctx: C): KeySetParams[] {
       { index: 7, label: h ? '↑ ' + mbps(h.up) : '—', sublabel: 'Mb/s up' },
       { index: 8, label: h ? String(h.wired + h.wireless) : '—', sublabel: 'clients' },
       { index: 9, label: `${adopted - offline}/${adopted}`, sublabel: offline ? `${offline} offline` : 'devices', ...(offline ? { background: DANGER } : {}) },
-      ...blanks(10, 15)
+      ...blanks(10, L.keys)
     );
   } else if (cur === 'adopt') {
-    const waiting = v.devices.filter((d) => !d.adopted).slice(0, 9);
+    // The last key stays blank, as on the 15-key deck: a list that fills every key reads as cut off.
+    const waiting = v.devices.filter((d) => !d.adopted).slice(0, L.list.length - 1);
     waiting.forEach((d, i) => faces.push({ index: 5 + i, label: short(d.model || 'DEVICE', 10), sublabel: c.allowChanges ? 'hold: adopt' : short(d.ip, 12) }));
-    faces.push(...blanks(5 + waiting.length, 15));
+    faces.push(...blanks(5 + waiting.length, L.keys));
   } else if (cur === 'trunks') {
-    const list = v.trunks.slice(0, 10);
+    const list = v.trunks.slice(0, L.list.length);
     list.forEach((t, i) => faces.push(trunkFace(5 + i, t)));
-    faces.push(...blanks(5 + list.length, 15));
+    faces.push(...blanks(5 + list.length, L.keys));
   } else if (cur === 'wifi') {
     const sel = snapshot(ctx).ssid;
-    const list = v.wlans.slice(0, 9);
+    const list = v.wlans.slice(0, L.list.length - 1);
     list.forEach((w, i) => faces.push({ index: 5 + i, label: short(w.name, 10), sublabel: `${w.clients} clients`, ...(w.id === sel ? { background: SELECTED } : {}) }));
-    faces.push(...blanks(5 + list.length, 15));
+    faces.push(...blanks(5 + list.length, L.keys));
   }
   return faces;
 }
@@ -574,10 +611,11 @@ export default defineModule<State, Config>({
   async key(ctx, { index, action }) {
     if (action !== 'down' || !rt) return;
     const cur = rt.view;
+    const L = layout(grid(ctx));
     if (cur === 'switches') {
       const nets = view().networks;
-      const { perPage, pages } = vlanPaging(nets.length);
-      if (index === KEY.MORE && pages > 1) {
+      const { perPage, pages } = vlanPaging(nets.length, L.vlans.length);
+      if (index === L.vlans.length - 1 && pages > 1) {
         rt.vlanPage = (rt.vlanPage + 1) % pages;
         return draw(ctx);
       }
@@ -586,14 +624,14 @@ export default defineModule<State, Config>({
         if (net) await pickVlan(ctx, net.id);
         return;
       }
-      if (index === KEY.PREV) return stepPort(ctx, -1);
-      if (index === KEY.NEXT) return stepPort(ctx, 1);
-      if (index === KEY.BACK) return setView(ctx, 'overview');
-      if (index === KEY.REVERT) {
+      if (index === L.prev) return stepPort(ctx, -1);
+      if (index === L.next) return stepPort(ctx, 1);
+      if (index === L.back) return setView(ctx, 'overview');
+      if (index === L.revert) {
         rt.pending.clear();
         return draw(ctx);
       }
-      if (index === KEY.SAVE && rt.pending.size && cfg(ctx).allowChanges) return ctx.notify('Hold SAVE to apply the port changes');
+      if (index === L.save && rt.pending.size && cfg(ctx).allowChanges) return ctx.notify('Hold SAVE to apply the port changes');
       return;
     }
     if (index <= KEY.WIFI) return setView(ctx, (['overview', 'switches', 'trunks', 'adopt', 'wifi'] as View[])[index]);
@@ -616,7 +654,7 @@ export default defineModule<State, Config>({
 
   async hold(ctx, index) {
     if (!rt) return;
-    if (rt.view === 'switches' && index === KEY.SAVE) return savePending(ctx);
+    if (rt.view === 'switches' && index === layout(grid(ctx)).save) return savePending(ctx);
     if (rt.view === 'adopt' && index >= 5) {
       const d = view().devices.filter((x) => !x.adopted)[index - 5];
       if (d) await adopt(ctx, d.mac);
@@ -625,6 +663,14 @@ export default defineModule<State, Config>({
 
   async strip(ctx, id) {
     await setView(ctx, id);
+  },
+
+  fullDeck: true,
+
+  // Another deck was plugged in: the keys move. VLAN pages are clamped as they are drawn.
+  async deck(ctx) {
+    await ctx.keys.clear();
+    await draw(ctx);
   },
 
   async client(ctx, { clientId, action }) {
