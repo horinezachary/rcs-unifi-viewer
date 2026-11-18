@@ -105,6 +105,12 @@ It needs two Actions secrets:
 - `RCS_SOURCE_TOKEN`: a fine-grained token with Contents read-only on `rack-control-surface`, so the
   workflows can link the SDK from it. CI uses the tag in `package.json` `rcs.sdkRef`.
 
+## Icon
+
+`assets/icon.svg` is the Ubiquiti "U" mark, taken from [Simple Icons](https://simpleicons.org) 15.0.0
+(`ubiquiti.svg`; the drawing is CC0). Ubiquiti, UniFi and the U logo are trademarks of Ubiquiti Inc. The mark is
+used only to show which equipment this module works with. This module is not made or endorsed by Ubiquiti.
+
 ## Layout
 
 | Path | What |
