@@ -6,7 +6,9 @@ waiting for adoption, and Wi-Fi networks with join QR codes. It talks to a UniFi
 Machine, Cloud Gateway, Cloud Key, UniFi OS Server) or a self-hosted UniFi Network application.
 
 - **Overview**: WAN status, ISP and latency, client counts, devices online, a bandwidth graph of the
-  last five minutes and the device list. The Stream Deck shows WAN, down, up, clients and devices.
+  last five minutes and the device list, offline devices first. On a 16:9 touchscreen the graph runs
+  across the top and the device list below adds model and firmware. The Stream Deck shows WAN, down,
+  up, clients and devices.
 - **Switches**: every port of a switch, coloured by its native VLAN, with link speed, PoE and the
   device on it. Tap a port, pick a VLAN on keys 1 to 10, then hold SAVE (key 15). The web view has
   a VLAN menu per port and an Apply button.
