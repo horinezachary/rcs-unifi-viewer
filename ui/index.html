@@ -39,6 +39,33 @@
       th { text-align: left; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; color: var(--rcs-muted); padding: 8px 10px; border-bottom: 1px solid var(--rcs-border); }
       td { padding: 6px 10px; border-bottom: 1px solid var(--rcs-border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
       td.mono { font-family: var(--rcs-mono); color: var(--rcs-muted); }
+      td.more { color: var(--rcs-muted); font-size: 13px; }
+      .tall-only { display: none; }
+
+      /* A taller screen (fullPanel on a 16:9 touchscreen): the chart runs across the top, the four
+         figures sit in a row under it, and the device list gets the rest of the height with bigger
+         rows and two more columns. The 440 px bar keeps the three-column layout above. */
+      @media (min-height: 600px) {
+        .overview { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(260px, 1fr) auto minmax(0, 1.35fr);
+          grid-template-areas: 'graph' 'stats' 'devices'; }
+        .overview .graph { grid-area: graph; padding: 14px 18px; gap: 10px; }
+        .overview .stats { grid-area: stats; grid-template-rows: none; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+        .overview .devices { grid-area: devices; }
+        .stat { padding: 14px 20px; gap: 6px 12px; }
+        .stat .k { font-size: 14px; }
+        .stat .v { font-size: 34px; }
+        .stat .s { font-size: 16px; }
+        .graph .top { font-size: 16px; }
+        .graph b { font-size: 26px; }
+        .sw { width: 12px; height: 12px; }
+        .axis { font-size: 13px; }
+        .plot { grid-template-columns: 56px 1fr; }
+        .devices table { font-size: 19px; }
+        .devices th { font-size: 14px; padding: 12px 16px; }
+        .devices td { padding: 11px 16px; max-width: 360px; }
+        .devices td.more { font-size: 16px; }
+        .tall-only { display: table-cell; }
+      }
 
       /* switches */
       .ports { display: grid; gap: 8px; }
@@ -171,7 +198,7 @@
         </section>
         <div class="devices">
           <table>
-            <thead><tr><th>Device</th><th>Status</th><th>IP</th><th>Clients</th><th>Uptime</th></tr></thead>
+            <thead><tr><th>Device</th><th class="tall-only">Model</th><th>Status</th><th>IP</th><th>Clients</th><th class="tall-only">Firmware</th><th>Uptime</th></tr></thead>
             <tbody id="devices"></tbody>
           </table>
         </div>
@@ -319,15 +346,42 @@
         $('span').textContent = `last ${Math.round((hist.length * 5) / 60) || 1} min`;
         $('graph').setAttribute('aria-label', `WAN bandwidth. Down now ${mbps(now[0])} Mb/s, up ${mbps(now[1])} Mb/s.`);
 
-        $('devices').replaceChildren(
-          ...adopted.slice(0, 8).map((d) => {
-            const tr = el('tr');
-            const [label, cls] = STATE[d.state] ?? STATE.unknown;
-            tr.append(el('td', {}, d.name), el('td', { class: cls }, label), el('td', { class: 'mono' }, d.ip || '–'), el('td', { class: 'mono' }, String(d.clients)), el('td', { class: 'mono' }, d.state === 'online' ? uptime(d.uptime) : '–'));
-            return tr;
-          })
-        );
+        // Devices that need attention come first, so they are never the rows cut off at the bottom.
+        const rank = (d) => (d.state === 'offline' ? 0 : d.state === 'online' ? 2 : 1);
+        const list = adopted.map((d, i) => [d, i]).sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map(([d]) => d);
+        const rows = list.map((d) => {
+          const tr = el('tr');
+          const [label, cls] = STATE[d.state] ?? STATE.unknown;
+          tr.append(
+            el('td', {}, d.name),
+            el('td', { class: 'tall-only' }, d.model || '–'),
+            el('td', { class: cls }, label),
+            el('td', { class: 'mono' }, d.ip || '–'),
+            el('td', { class: 'mono' }, String(d.clients)),
+            el('td', { class: 'mono tall-only' }, d.version || '–'),
+            el('td', { class: 'mono' }, d.state === 'online' ? uptime(d.uptime) : '–')
+          );
+          return tr;
+        });
+        $('devices').replaceChildren(...rows);
+        fitDevices(rows.length);
       }
+
+      // The panel does not scroll, so show as many rows as fit and say how many are left out.
+      function fitDevices(total) {
+        const box = document.querySelector('.devices');
+        const body = $('devices');
+        if (!box.clientHeight || box.scrollHeight <= box.clientHeight) return;
+        const more = el('tr');
+        const cell = el('td', { class: 'more', colspan: '7' });
+        more.append(cell);
+        body.append(more);
+        while (body.rows.length > 1 && box.scrollHeight > box.clientHeight) {
+          body.rows[body.rows.length - 2].remove();
+          cell.textContent = `+${total - (body.rows.length - 1)} more devices, all listed in the web view`;
+        }
+      }
+      addEventListener('resize', () => { if (!$('view-overview').hidden) drawOverview(); });
 
       function drawSwitches() {
         const sw = s.switch;
